@@ -4,25 +4,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from 'react';
 import {
   Box,
   DOMElement,
   measureElement,
   Static,
   Text,
+  useInput,
   useStdin,
   useStdout,
 } from 'ink';
-import { StreamingState, type HistoryItem, MessageType } from './types.js';
+import {
+  StreamingState,
+  type HistoryItem,
+  MessageType,
+} from './types.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useGeminiStream } from './hooks/useGeminiStream.js';
 import { useLoadingIndicator } from './hooks/useLoadingIndicator.js';
-import { useThemeCommand } from './hooks/useThemeCommand.js';
-import { useAuthCommand } from './hooks/useAuthCommand.js';
-import { useFolderTrust } from './hooks/useFolderTrust.js';
-import { useEditorSettings } from './hooks/useEditorSettings.js';
-import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useAutoAcceptIndicator } from './hooks/useAutoAcceptIndicator.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
 import { Header } from './components/Header.js';
@@ -39,96 +45,129 @@ import { FolderTrustDialog } from './components/FolderTrustDialog.js';
 import { ShellConfirmationDialog } from './components/ShellConfirmationDialog.js';
 import { RadioButtonSelect } from './components/shared/RadioButtonSelect.js';
 import { Colors } from './colors.js';
-import { loadHierarchicalGeminiMemory } from '../config/config.js';
 import { LoadedSettings, SettingScope } from '../config/settings.js';
 import { Tips } from './components/Tips.js';
-import { ConsolePatcher } from './utils/ConsolePatcher.js';
-import { registerCleanup } from '../utils/cleanup.js';
 import { DetailedMessagesDisplay } from './components/DetailedMessagesDisplay.js';
 import { HistoryItemDisplay } from './components/HistoryItemDisplay.js';
 import { ContextSummaryDisplay } from './components/ContextSummaryDisplay.js';
-import { useHistory } from './hooks/useHistoryManager.js';
-import process from 'node:process';
+import { UseHistoryManagerReturn } from './hooks/useHistoryManager.js';
 import {
-  getErrorMessage,
   type Config,
   getAllGeminiMdFilenames,
   ApprovalMode,
-  isEditorAvailable,
   EditorType,
-  FlashFallbackEvent,
-  logFlashFallback,
   AuthType,
   type IdeContext,
   ideContext,
+  UserTierId,
 } from '@google/gemini-cli-core';
 import {
   IdeIntegrationNudge,
   IdeIntegrationNudgeResult,
 } from './IdeIntegrationNudge.js';
-import { validateAuthMethod } from '../config/auth.js';
 import { useLogger } from './hooks/useLogger.js';
 import { StreamingContext } from './contexts/StreamingContext.js';
-import {
-  SessionStatsProvider,
-  useSessionStats,
-} from './contexts/SessionContext.js';
+import { useSessionStats } from './contexts/SessionContext.js';
 import { useGitBranchName } from './hooks/useGitBranchName.js';
 import { useFocus } from './hooks/useFocus.js';
 import { useBracketedPaste } from './hooks/useBracketedPaste.js';
 import { useTextBuffer } from './components/shared/text-buffer.js';
-import { useVimMode, VimModeProvider } from './contexts/VimModeContext.js';
 import { useVim } from './hooks/vim.js';
 import { useKeypress, Key } from './hooks/useKeypress.js';
 import { keyMatchers, Command } from './keyMatchers.js';
 import * as fs from 'fs';
 import { UpdateNotification } from './components/UpdateNotification.js';
-import {
-  isProQuotaExceededError,
-  isGenericQuotaExceededError,
-  UserTierId,
-} from '@google/gemini-cli-core';
 import { UpdateObject } from './utils/updateCheck.js';
 import ansiEscapes from 'ansi-escapes';
 import { OverflowProvider } from './contexts/OverflowContext.js';
 import { ShowMoreLines } from './components/ShowMoreLines.js';
 import { PrivacyNotice } from './privacy/PrivacyNotice.js';
-import { useSettingsCommand } from './hooks/useSettingsCommand.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
-import { setUpdateHandler } from '../utils/handleAutoUpdate.js';
 import { appEvents, AppEvent } from '../utils/events.js';
 import { isNarrowWidth } from './utils/isNarrowWidth.js';
+import { useUI } from './hooks/useUI.js';
+import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
+import { useVimMode } from './contexts/VimModeContext.js';
+import { useFolderTrust } from './hooks/useFolderTrust.js';
 
 const CTRL_EXIT_PROMPT_DURATION_MS = 1000;
 
-interface AppProps {
+interface AppProps extends UseHistoryManagerReturn {
   config: Config;
   settings: LoadedSettings;
   startupWarnings?: string[];
   version: string;
+  isThemeDialogOpen: boolean;
+  themeError: string | null;
+  handleThemeSelect: (
+    themeName: string | undefined,
+    scope: SettingScope,
+  ) => void;
+  handleThemeHighlight: (themeName: string | undefined) => void;
+  isAuthenticating: boolean;
+  authError: string | null;
+  cancelAuthentication: () => void;
+  isAuthDialogOpen: boolean;
+  handleAuthSelect: (
+    authType: AuthType | undefined,
+    scope: SettingScope,
+  ) => void;
+  editorError: string | null;
+  isEditorDialogOpen: boolean;
+  handleEditorSelect: (
+    editorType: EditorType | undefined,
+    scope: SettingScope,
+  ) => void;
+  exitEditorDialog: () => void;
+  showPrivacyNotice: boolean;
+  setShowPrivacyNotice: (show: boolean) => void;
+  corgiMode: boolean;
+  debugMessage: string;
+  quittingMessages: HistoryItem[] | null;
+  isSettingsDialogOpen: boolean;
+  closeSettingsDialog: () => void;
 }
 
-export const AppWrapper = (props: AppProps) => (
-  <SessionStatsProvider>
-    <VimModeProvider settings={props.settings}>
-      <App {...props} />
-    </VimModeProvider>
-  </SessionStatsProvider>
-);
+export const App = (props: AppProps) => {
+  const {
+    config,
+    settings,
+    startupWarnings = [],
+    version,
+    history,
+    addItem,
+    clearItems,
+    loadHistory,
+    isThemeDialogOpen,
+    themeError,
+    handleThemeSelect,
+    handleThemeHighlight,
+    isAuthenticating,
+    authError,
+    isAuthDialogOpen,
+    handleAuthSelect,
+    editorError,
+    isEditorDialogOpen,
+    handleEditorSelect,
+    exitEditorDialog,
+    showPrivacyNotice,
+    setShowPrivacyNotice,
+    corgiMode,
+    debugMessage,
+    quittingMessages,
+    isSettingsDialogOpen,
+    closeSettingsDialog,
+  } = props;
 
-const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
+  const ui = useUI();
   const isFocused = useFocus();
   useBracketedPaste();
   const [updateInfo, setUpdateInfo] = useState<UpdateObject | null>(null);
   const { stdout } = useStdout();
   const nightly = version.includes('nightly');
-  const { history, addItem, clearItems, loadHistory } = useHistory();
 
   const [idePromptAnswered, setIdePromptAnswered] = useState(false);
   const currentIDE = config.getIdeClient().getCurrentIde();
-  useEffect(() => {
-    registerCleanup(() => config.getIdeClient().disconnect());
-  }, [config]);
   const shouldShowIdePrompt =
     config.getIdeModeFeature() &&
     currentIDE &&
@@ -136,25 +175,11 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     !settings.merged.hasSeenIdeIntegrationNudge &&
     !idePromptAnswered;
 
-  useEffect(() => {
-    const cleanup = setUpdateHandler(addItem, setUpdateInfo);
-    return cleanup;
-  }, [addItem]);
-
   const {
     consoleMessages,
     handleNewMessage,
     clearConsoleMessages: clearConsoleMessagesState,
   } = useConsoleMessages();
-
-  useEffect(() => {
-    const consolePatcher = new ConsolePatcher({
-      onNewMessage: handleNewMessage,
-      debugMode: config.getDebugMode(),
-    });
-    consolePatcher.patch();
-    registerCleanup(consolePatcher.cleanup);
-  }, [handleNewMessage, config]);
 
   const { stats: sessionStats } = useSessionStats();
   const [staticNeedsRefresh, setStaticNeedsRefresh] = useState(false);
@@ -165,12 +190,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   }, [setStaticKey, stdout]);
 
   const [geminiMdFileCount, setGeminiMdFileCount] = useState<number>(0);
-  const [debugMessage, setDebugMessage] = useState<string>('');
-  const [themeError, setThemeError] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [editorError, setEditorError] = useState<string | null>(null);
-  const [footerHeight, setFooterHeight] = useState<number>(0);
-  const [corgiMode, setCorgiMode] = useState(false);
   const [currentModel, setCurrentModel] = useState(config.getModel());
   const [shellModeActive, setShellModeActive] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
@@ -178,14 +197,10 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     useState<boolean>(false);
 
   const [ctrlCPressedOnce, setCtrlCPressedOnce] = useState(false);
-  const [quittingMessages, setQuittingMessages] = useState<
-    HistoryItem[] | null
-  >(null);
   const ctrlCTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [ctrlDPressedOnce, setCtrlDPressedOnce] = useState(false);
   const ctrlDTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [constrainHeight, setConstrainHeight] = useState<boolean>(true);
-  const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
   const [userTier, setUserTier] = useState<UserTierId | undefined>(undefined);
@@ -195,9 +210,42 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [showEscapePrompt, setShowEscapePrompt] = useState(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
+  const { isFolderTrustDialogOpen, handleFolderTrustSelect } =
+    useFolderTrust(settings);
+
+  const { vimEnabled, vimMode, toggleVimEnabled } = useVimMode();
+
+  const {
+    handleSlashCommand,
+    slashCommands,
+    pendingHistoryItems: pendingSlashCommandHistoryItems,
+    commandContext,
+    shellConfirmationRequest,
+    confirmationRequest,
+  } = useSlashCommandProcessor(
+    config,
+    settings,
+    addItem,
+    clearItems,
+    loadHistory,
+    refreshStatic,
+    ui.setDebugMessage,
+    ui.openThemeDialog,
+    ui.openAuthDialog,
+    ui.openEditorDialog,
+    ui.toggleCorgiMode,
+    ui.quit,
+    ui.openPrivacyNotice,
+    () => {
+      /* openSettingsDialog */
+    },
+    toggleVimEnabled,
+    setIsProcessing,
+    setGeminiMdFileCount,
+  );
+
   useEffect(() => {
     const unsubscribe = ideContext.subscribeToIdeContext(setIdeContextState);
-    // Set the initial value
     setIdeContextState(ideContext.getIdeContext());
     return unsubscribe;
   }, []);
@@ -205,7 +253,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   useEffect(() => {
     const openDebugConsole = () => {
       setShowErrorDetails(true);
-      setConstrainHeight(false); // Make sure the user sees the full message.
+      setConstrainHeight(false);
     };
     appEvents.on(AppEvent.OpenDebugConsole, openDebugConsole);
 
@@ -224,10 +272,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     };
   }, [handleNewMessage]);
 
-  const openPrivacyNotice = useCallback(() => {
-    setShowPrivacyNotice(true);
-  }, []);
-
   const handleEscapePromptChange = useCallback((showPrompt: boolean) => {
     setShowEscapePrompt(showPrompt);
   }, []);
@@ -242,113 +286,12 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     [consoleMessages],
   );
 
-  const {
-    isThemeDialogOpen,
-    openThemeDialog,
-    handleThemeSelect,
-    handleThemeHighlight,
-  } = useThemeCommand(settings, setThemeError, addItem);
-
-  const { isSettingsDialogOpen, openSettingsDialog, closeSettingsDialog } =
-    useSettingsCommand();
-
-  const { isFolderTrustDialogOpen, handleFolderTrustSelect } =
-    useFolderTrust(settings);
-
-  const {
-    isAuthDialogOpen,
-    openAuthDialog,
-    handleAuthSelect,
-    isAuthenticating,
-    cancelAuthentication,
-  } = useAuthCommand(settings, setAuthError, config);
-
   useEffect(() => {
-    if (settings.merged.selectedAuthType && !settings.merged.useExternalAuth) {
-      const error = validateAuthMethod(settings.merged.selectedAuthType);
-      if (error) {
-        setAuthError(error);
-        openAuthDialog();
-      }
-    }
-  }, [
-    settings.merged.selectedAuthType,
-    settings.merged.useExternalAuth,
-    openAuthDialog,
-    setAuthError,
-  ]);
-
-  // Sync user tier from config when authentication changes
-  useEffect(() => {
-    // Only sync when not currently authenticating
     if (!isAuthenticating) {
       setUserTier(config.getGeminiClient()?.getUserTier());
     }
   }, [config, isAuthenticating]);
 
-  const {
-    isEditorDialogOpen,
-    openEditorDialog,
-    handleEditorSelect,
-    exitEditorDialog,
-  } = useEditorSettings(settings, setEditorError, addItem);
-
-  const toggleCorgiMode = useCallback(() => {
-    setCorgiMode((prev) => !prev);
-  }, []);
-
-  const performMemoryRefresh = useCallback(async () => {
-    addItem(
-      {
-        type: MessageType.INFO,
-        text: 'Refreshing hierarchical memory (GEMINI.md or other context files)...',
-      },
-      Date.now(),
-    );
-    try {
-      const { memoryContent, fileCount } = await loadHierarchicalGeminiMemory(
-        process.cwd(),
-        settings.merged.loadMemoryFromIncludeDirectories
-          ? config.getWorkspaceContext().getDirectories()
-          : [],
-        config.getDebugMode(),
-        config.getFileService(),
-        settings.merged,
-        config.getExtensionContextFilePaths(),
-        settings.merged.memoryImportFormat || 'tree', // Use setting or default to 'tree'
-        config.getFileFilteringOptions(),
-      );
-
-      config.setUserMemory(memoryContent);
-      config.setGeminiMdFileCount(fileCount);
-      setGeminiMdFileCount(fileCount);
-
-      addItem(
-        {
-          type: MessageType.INFO,
-          text: `Memory refreshed successfully. ${memoryContent.length > 0 ? `Loaded ${memoryContent.length} characters from ${fileCount} file(s).` : 'No memory content found.'}`,
-        },
-        Date.now(),
-      );
-      if (config.getDebugMode()) {
-        console.log(
-          `[DEBUG] Refreshed memory content in config: ${memoryContent.substring(0, 200)}...`,
-        );
-      }
-    } catch (error) {
-      const errorMessage = getErrorMessage(error);
-      addItem(
-        {
-          type: MessageType.ERROR,
-          text: `Error refreshing memory: ${errorMessage}`,
-        },
-        Date.now(),
-      );
-      console.error('Error refreshing memory:', error);
-    }
-  }, [config, addItem, settings.merged]);
-
-  // Watch for model changes (e.g., from Flash fallback)
   useEffect(() => {
     const checkModelChange = () => {
       const configModel = config.getModel();
@@ -357,100 +300,10 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
       }
     };
 
-    // Check immediately and then periodically
-    checkModelChange();
-    const interval = setInterval(checkModelChange, 1000); // Check every second
-
+    const interval = setInterval(checkModelChange, 1000);
     return () => clearInterval(interval);
   }, [config, currentModel]);
 
-  // Set up Flash fallback handler
-  useEffect(() => {
-    const flashFallbackHandler = async (
-      currentModel: string,
-      fallbackModel: string,
-      error?: unknown,
-    ): Promise<boolean> => {
-      let message: string;
-
-      if (
-        config.getContentGeneratorConfig().authType ===
-        AuthType.LOGIN_WITH_GOOGLE
-      ) {
-        // Use actual user tier if available; otherwise, default to FREE tier behavior (safe default)
-        const isPaidTier =
-          userTier === UserTierId.LEGACY || userTier === UserTierId.STANDARD;
-
-        // Check if this is a Pro quota exceeded error
-        if (error && isProQuotaExceededError(error)) {
-          if (isPaidTier) {
-            message = `⚡ You have reached your daily ${currentModel} quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To continue accessing the ${currentModel} model today, consider using /auth to switch to using a paid API key from AI Studio at https://aistudio.google.com/apikey`;
-          } else {
-            message = `⚡ You have reached your daily ${currentModel} quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
-⚡ Or you can utilize a Gemini API Key. See: https://goo.gle/gemini-cli-docs-auth#gemini-api-key
-⚡ You can switch authentication methods by typing /auth`;
-          }
-        } else if (error && isGenericQuotaExceededError(error)) {
-          if (isPaidTier) {
-            message = `⚡ You have reached your daily quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To continue accessing the ${currentModel} model today, consider using /auth to switch to using a paid API key from AI Studio at https://aistudio.google.com/apikey`;
-          } else {
-            message = `⚡ You have reached your daily quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
-⚡ Or you can utilize a Gemini API Key. See: https://goo.gle/gemini-cli-docs-auth#gemini-api-key
-⚡ You can switch authentication methods by typing /auth`;
-          }
-        } else {
-          if (isPaidTier) {
-            // Default fallback message for other cases (like consecutive 429s)
-            message = `⚡ Automatically switching from ${currentModel} to ${fallbackModel} for faster responses for the remainder of this session.
-⚡ Possible reasons for this are that you have received multiple consecutive capacity errors or you have reached your daily ${currentModel} quota limit
-⚡ To continue accessing the ${currentModel} model today, consider using /auth to switch to using a paid API key from AI Studio at https://aistudio.google.com/apikey`;
-          } else {
-            // Default fallback message for other cases (like consecutive 429s)
-            message = `⚡ Automatically switching from ${currentModel} to ${fallbackModel} for faster responses for the remainder of this session.
-⚡ Possible reasons for this are that you have received multiple consecutive capacity errors or you have reached your daily ${currentModel} quota limit
-⚡ To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
-⚡ Or you can utilize a Gemini API Key. See: https://goo.gle/gemini-cli-docs-auth#gemini-api-key
-⚡ You can switch authentication methods by typing /auth`;
-          }
-        }
-
-        // Add message to UI history
-        addItem(
-          {
-            type: MessageType.INFO,
-            text: message,
-          },
-          Date.now(),
-        );
-
-        // Set the flag to prevent tool continuation
-        setModelSwitchedFromQuotaError(true);
-        // Set global quota error flag to prevent Flash model calls
-        config.setQuotaErrorOccurred(true);
-      }
-
-      // Switch model for future use but return false to stop current retry
-      config.setModel(fallbackModel);
-      config.setFallbackMode(true);
-      logFlashFallback(
-        config,
-        new FlashFallbackEvent(config.getContentGeneratorConfig().authType!),
-      );
-      return false; // Don't continue with current prompt
-    };
-
-    config.setFlashFallbackHandler(flashFallbackHandler);
-  }, [config, addItem, userTier]);
-
-  // Terminal and UI setup
   const { rows: terminalHeight, columns: terminalWidth } = useTerminalSize();
   const isNarrow = isNarrowWidth(terminalWidth);
   const { stdin, setRawMode } = useStdin();
@@ -463,7 +316,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   );
   const suggestionsWidth = Math.max(20, Math.floor(terminalWidth * 0.8));
 
-  // Utility callbacks
   const isValidPath = useCallback((filePath: string): boolean => {
     try {
       return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
@@ -472,64 +324,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     }
   }, []);
 
-  const getPreferredEditor = useCallback(() => {
-    const editorType = settings.merged.preferredEditor;
-    const isValidEditor = isEditorAvailable(editorType);
-    if (!isValidEditor) {
-      openEditorDialog();
-      return;
-    }
-    return editorType as EditorType;
-  }, [settings, openEditorDialog]);
-
-  const onAuthError = useCallback(() => {
-    setAuthError('reauth required');
-    openAuthDialog();
-  }, [openAuthDialog, setAuthError]);
-
-  // Core hooks and processors
-  const {
-    vimEnabled: vimModeEnabled,
-    vimMode,
-    toggleVimEnabled,
-  } = useVimMode();
-
-  const {
-    handleSlashCommand,
-    slashCommands,
-    pendingHistoryItems: pendingSlashCommandHistoryItems,
-    commandContext,
-    shellConfirmationRequest,
-    confirmationRequest,
-  } = useSlashCommandProcessor(
-    config,
-    settings,
-    addItem,
-    clearItems,
-    loadHistory,
-    refreshStatic,
-    setDebugMessage,
-    openThemeDialog,
-    openAuthDialog,
-    openEditorDialog,
-    toggleCorgiMode,
-    setQuittingMessages,
-    openPrivacyNotice,
-    openSettingsDialog,
-    toggleVimEnabled,
-    setIsProcessing,
-    setGeminiMdFileCount,
-  );
-
-  const buffer = useTextBuffer({
-    initialText: '',
-    viewport: { height: 10, width: inputWidth },
-    stdin,
-    setRawMode,
-    isValidPath,
-    shellModeActive,
-  });
-
   const [userMessages, setUserMessages] = useState<string[]>([]);
 
   const handleUserCancel = useCallback(() => {
@@ -537,7 +331,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     if (lastUserMessage) {
       buffer.setText(lastUserMessage);
     }
-  }, [buffer, userMessages]);
+  }, [userMessages]);
 
   const {
     streamingState,
@@ -551,19 +345,20 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     history,
     addItem,
     config,
-    setDebugMessage,
+    ui.setDebugMessage,
     handleSlashCommand,
     shellModeActive,
-    getPreferredEditor,
-    onAuthError,
-    performMemoryRefresh,
+    () => settings.merged.preferredEditor as EditorType,
+    ui.openAuthDialog,
+    async () => {
+      /* performMemoryRefresh */
+    },
     modelSwitchedFromQuotaError,
     setModelSwitchedFromQuotaError,
     refreshStatic,
     handleUserCancel,
   );
 
-  // Input handling
   const handleFinalSubmit = useCallback(
     (submittedValue: string) => {
       const trimmedValue = submittedValue.trim();
@@ -595,9 +390,20 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     [handleSlashCommand, settings],
   );
 
+  const buffer = useTextBuffer({
+    initialText: '',
+    viewport: { height: 10, width: inputWidth },
+    stdin,
+    setRawMode,
+    isValidPath,
+    shellModeActive,
+  });
+
   const { handleInput: vimHandleInput } = useVim(buffer, handleFinalSubmit);
-  const pendingHistoryItems = [...pendingSlashCommandHistoryItems];
-  pendingHistoryItems.push(...pendingGeminiHistoryItems);
+  const pendingHistoryItems = [
+    ...pendingSlashCommandHistoryItems,
+    ...pendingGeminiHistoryItems,
+  ];
 
   const { elapsedTime, currentLoadingPhrase } =
     useLoadingIndicator(streamingState);
@@ -613,7 +419,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
         if (timerRef.current) {
           clearTimeout(timerRef.current);
         }
-        // Directly invoke the central command handler.
         handleSlashCommand('/quit');
       } else {
         setPressedOnce(true);
@@ -649,10 +454,8 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
         config.getIdeMode() &&
         ideContextState
       ) {
-        // Show IDE status when in IDE mode and context is available.
         handleSlashCommand('/ide status');
       } else if (keyMatchers[Command.QUIT](key)) {
-        // When authenticating, let AuthInProgress component handle Ctrl+C.
         if (isAuthenticating) {
           return;
         }
@@ -696,18 +499,11 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
 
   useKeypress(handleGlobalKeypress, { isActive: true });
 
-  useEffect(() => {
-    if (config) {
-      setGeminiMdFileCount(config.getGeminiMdFileCount());
-    }
-  }, [config, config.getGeminiMdFileCount]);
-
   const logger = useLogger();
 
   useEffect(() => {
     const fetchUserMessages = async () => {
-      const pastMessagesRaw = (await logger?.getPreviousUserMessages()) || []; // Newest first
-
+      const pastMessagesRaw = (await logger?.getPreviousUserMessages()) || [];
       const currentSessionUserMessages = history
         .filter(
           (item): item is HistoryItem & { type: 'user'; text: string } =>
@@ -716,25 +512,20 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
             item.text.trim() !== '',
         )
         .map((item) => item.text)
-        .reverse(); // Newest first, to match pastMessagesRaw sorting
-
-      // Combine, with current session messages being more recent
+        .reverse();
       const combinedMessages = [
         ...currentSessionUserMessages,
         ...pastMessagesRaw,
       ];
-
-      // Deduplicate consecutive identical messages from the combined list (still newest first)
       const deduplicatedMessages: string[] = [];
       if (combinedMessages.length > 0) {
-        deduplicatedMessages.push(combinedMessages[0]); // Add the newest one unconditionally
+        deduplicatedMessages.push(combinedMessages[0]);
         for (let i = 1; i < combinedMessages.length; i++) {
           if (combinedMessages[i] !== combinedMessages[i - 1]) {
             deduplicatedMessages.push(combinedMessages[i]);
           }
         }
       }
-      // Reverse to oldest first for useInputHistory
       setUserMessages(deduplicatedMessages.reverse());
     };
     fetchUserMessages();
@@ -753,35 +544,25 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const mainControlsRef = useRef<DOMElement>(null);
   const pendingHistoryItemRef = useRef<DOMElement>(null);
 
-  useEffect(() => {
+  const staticExtraHeight = 3;
+  const availableTerminalHeight = useMemo(() => {
     if (mainControlsRef.current) {
       const fullFooterMeasurement = measureElement(mainControlsRef.current);
-      setFooterHeight(fullFooterMeasurement.height);
+      return terminalHeight - fullFooterMeasurement.height - staticExtraHeight;
     }
+    return terminalHeight - staticExtraHeight;
   }, [terminalHeight, consoleMessages, showErrorDetails]);
 
-  const staticExtraHeight = /* margins and padding */ 3;
-  const availableTerminalHeight = useMemo(
-    () => terminalHeight - footerHeight - staticExtraHeight,
-    [terminalHeight, footerHeight],
-  );
-
   useEffect(() => {
-    // skip refreshing Static during first mount
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
-
-    // debounce so it doesn't fire up too often during resize
     const handler = setTimeout(() => {
       setStaticNeedsRefresh(false);
       refreshStatic();
     }, 300);
-
-    return () => {
-      clearTimeout(handler);
-    };
+    return () => clearTimeout(handler);
   }, [terminalWidth, terminalHeight, refreshStatic]);
 
   useEffect(() => {
@@ -802,10 +583,11 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
 
   const contextFileNames = useMemo(() => {
     const fromSettings = settings.merged.contextFileName;
-    if (fromSettings) {
-      return Array.isArray(fromSettings) ? fromSettings : [fromSettings];
-    }
-    return getAllGeminiMdFilenames();
+    return fromSettings
+      ? Array.isArray(fromSettings)
+        ? fromSettings
+        : [fromSettings]
+      : getAllGeminiMdFilenames();
   }, [settings.merged.contextFileName]);
 
   const initialPrompt = useMemo(() => config.getQuestion(), [config]);
@@ -857,27 +639,14 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
 
   const mainAreaWidth = Math.floor(terminalWidth * 0.9);
   const debugConsoleMaxHeight = Math.floor(Math.max(terminalHeight * 0.2, 5));
-  // Arbitrary threshold to ensure that items in the static area are large
-  // enough but not too large to make the terminal hard to use.
   const staticAreaMaxItemHeight = Math.max(terminalHeight * 4, 100);
-  const placeholder = vimModeEnabled
+  const placeholder = vimEnabled
     ? "  Press 'i' for INSERT mode and 'Esc' for NORMAL mode."
     : '  Type your message or @path/to/file';
 
   return (
     <StreamingContext.Provider value={streamingState}>
       <Box flexDirection="column" width="90%">
-        {/*
-         * The Static component is an Ink intrinsic in which there can only be 1 per application.
-         * Because of this restriction we're hacking it slightly by having a 'header' item here to
-         * ensure that it's statically rendered.
-         *
-         * Background on the Static Item: Anything in the Static component is written a single time
-         * to the console. Think of it like doing a console.log and then never using ANSI codes to
-         * clear that content ever again. Effectively it has a moving frame that every time new static
-         * content is set it'll flush content to the terminal and move the area which it's "clearing"
-         * down a notch. Without Static the area which gets erased and redrawn continuously grows.
-         */}
         <Static
           key={staticKey}
           items={[
@@ -911,8 +680,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
                   constrainHeight ? availableTerminalHeight : undefined
                 }
                 terminalWidth={mainAreaWidth}
-                // TODO(taehykim): It seems like references to ids aren't necessary in
-                // HistoryItemDisplay. Refactor later. Use a fake id for now.
                 item={{ ...item, id: 0 }}
                 isPending={true}
                 config={config}
@@ -924,7 +691,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
         </OverflowProvider>
 
         <Box flexDirection="column" ref={mainControlsRef}>
-          {/* Move UpdateNotification to render update notification above input area */}
           {updateInfo && <UpdateNotification message={updateInfo.message} />}
           {startupWarnings.length > 0 && (
             <Box
@@ -950,7 +716,9 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
           ) : isFolderTrustDialogOpen ? (
             <FolderTrustDialog onSelect={handleFolderTrustSelect} />
           ) : shellConfirmationRequest ? (
-            <ShellConfirmationDialog request={shellConfirmationRequest} />
+            <ShellConfirmationDialog
+              request={shellConfirmationRequest}
+            />
           ) : confirmationRequest ? (
             <Box flexDirection="column">
               {confirmationRequest.prompt}
@@ -997,9 +765,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
             <>
               <AuthInProgress
                 onTimeout={() => {
-                  setAuthError('Authentication timed out. Please try again.');
-                  cancelAuthentication();
-                  openAuthDialog();
+                  /* Handled in AppContainer */
                 }}
               />
               {showErrorDetails && (
@@ -1147,29 +913,9 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
               paddingX={1}
               marginBottom={1}
             >
-              {history.find(
-                (item) =>
-                  item.type === 'error' && item.text?.includes(initError),
-              )?.text ? (
-                <Text color={Colors.AccentRed}>
-                  {
-                    history.find(
-                      (item) =>
-                        item.type === 'error' && item.text?.includes(initError),
-                    )?.text
-                  }
-                </Text>
-              ) : (
-                <>
-                  <Text color={Colors.AccentRed}>
-                    Initialization Error: {initError}
-                  </Text>
-                  <Text color={Colors.AccentRed}>
-                    {' '}
-                    Please check API key and configuration.
-                  </Text>
-                </>
-              )}
+              <Text color={Colors.AccentRed}>
+                Initialization Error: {initError}
+              </Text>
             </Box>
           )}
           <Footer
@@ -1186,7 +932,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
             }
             promptTokenCount={sessionStats.lastPromptTokenCount}
             nightly={nightly}
-            vimMode={vimModeEnabled ? vimMode : undefined}
+            vimMode={vimEnabled ? vimMode : undefined}
           />
         </Box>
       </Box>
