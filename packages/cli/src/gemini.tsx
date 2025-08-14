@@ -45,8 +45,6 @@ import { checkForUpdates } from './ui/utils/updateCheck.js';
 import { handleAutoUpdate } from './utils/handleAutoUpdate.js';
 import { appEvents, AppEvent } from './utils/events.js';
 import { SettingsContext } from './ui/contexts/SettingsContext.js';
-import { VimModeProvider } from './ui/contexts/VimModeContext.js';
-import { SessionStatsProvider } from './ui/contexts/SessionContext.js';
 
 export function validateDnsResolutionOrder(
   order: string | undefined,

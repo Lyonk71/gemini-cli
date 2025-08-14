@@ -12,6 +12,7 @@ export interface UIContextActions {
   openAuthDialog: () => void;
   openThemeDialog: () => void;
   openEditorDialog: () => void;
+  openSettingsDialog: () => void;
   openPrivacyNotice: () => void;
   toggleCorgiMode: () => void;
   setDebugMessage: (message: string) => void;

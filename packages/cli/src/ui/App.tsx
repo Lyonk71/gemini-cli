@@ -4,27 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-} from 'react';
+import { type PartListUnion } from '@google/genai';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   Box,
   DOMElement,
   measureElement,
   Static,
   Text,
-  useInput,
   useStdin,
   useStdout,
 } from 'ink';
 import {
   StreamingState,
   type HistoryItem,
-  MessageType,
+  type HistoryItemWithoutId,
+  type SlashCommandProcessorResult,
 } from './types.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useGeminiStream } from './hooks/useGeminiStream.js';
@@ -59,7 +54,7 @@ import {
   AuthType,
   type IdeContext,
   ideContext,
-  UserTierId,
+  ToolConfirmationOutcome,
 } from '@google/gemini-cli-core';
 import {
   IdeIntegrationNudge,
@@ -76,8 +71,6 @@ import { useVim } from './hooks/vim.js';
 import { useKeypress, Key } from './hooks/useKeypress.js';
 import { keyMatchers, Command } from './keyMatchers.js';
 import * as fs from 'fs';
-import { UpdateNotification } from './components/UpdateNotification.js';
-import { UpdateObject } from './utils/updateCheck.js';
 import ansiEscapes from 'ansi-escapes';
 import { OverflowProvider } from './contexts/OverflowContext.js';
 import { ShowMoreLines } from './components/ShowMoreLines.js';
@@ -86,9 +79,9 @@ import { SettingsDialog } from './components/SettingsDialog.js';
 import { appEvents, AppEvent } from '../utils/events.js';
 import { isNarrowWidth } from './utils/isNarrowWidth.js';
 import { useUI } from './hooks/useUI.js';
-import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useVimMode } from './contexts/VimModeContext.js';
 import { useFolderTrust } from './hooks/useFolderTrust.js';
+import { type CommandContext, type SlashCommand } from './commands/types.js';
 
 const CTRL_EXIT_PROMPT_DURATION_MS = 1000;
 
@@ -126,6 +119,28 @@ interface AppProps extends UseHistoryManagerReturn {
   quittingMessages: HistoryItem[] | null;
   isSettingsDialogOpen: boolean;
   closeSettingsDialog: () => void;
+  handleSlashCommand: (
+    rawQuery: PartListUnion,
+    oneTimeShellAllowlist?: Set<string> | undefined,
+    overwriteConfirmed?: boolean | undefined,
+  ) => Promise<false | SlashCommandProcessorResult>;
+  slashCommands: readonly SlashCommand[];
+  pendingSlashCommandHistoryItems: HistoryItemWithoutId[];
+  commandContext: CommandContext;
+  shellConfirmationRequest: {
+    commands: string[];
+    onConfirm: (
+      outcome: ToolConfirmationOutcome,
+      approvedCommands?: string[] | undefined,
+    ) => void;
+  } | null;
+  confirmationRequest: {
+    prompt: React.ReactNode;
+    onConfirm: (confirmed: boolean) => void;
+  } | null;
+  isProcessing: boolean;
+  geminiMdFileCount: number;
+  refreshStatic: () => void;
 }
 
 export const App = (props: AppProps) => {
@@ -137,7 +152,6 @@ export const App = (props: AppProps) => {
     history,
     addItem,
     clearItems,
-    loadHistory,
     isThemeDialogOpen,
     themeError,
     handleThemeSelect,
@@ -157,12 +171,20 @@ export const App = (props: AppProps) => {
     quittingMessages,
     isSettingsDialogOpen,
     closeSettingsDialog,
+    handleSlashCommand,
+    slashCommands,
+    pendingSlashCommandHistoryItems,
+    commandContext,
+    shellConfirmationRequest,
+    confirmationRequest,
+    isProcessing,
+    geminiMdFileCount,
+    refreshStatic,
   } = props;
 
   const ui = useUI();
   const isFocused = useFocus();
   useBracketedPaste();
-  const [updateInfo, setUpdateInfo] = useState<UpdateObject | null>(null);
   const { stdout } = useStdout();
   const nightly = version.includes('nightly');
 
@@ -184,12 +206,7 @@ export const App = (props: AppProps) => {
   const { stats: sessionStats } = useSessionStats();
   const [staticNeedsRefresh, setStaticNeedsRefresh] = useState(false);
   const [staticKey, setStaticKey] = useState(0);
-  const refreshStatic = useCallback(() => {
-    stdout.write(ansiEscapes.clearTerminal);
-    setStaticKey((prev) => prev + 1);
-  }, [setStaticKey, stdout]);
 
-  const [geminiMdFileCount, setGeminiMdFileCount] = useState<number>(0);
   const [currentModel, setCurrentModel] = useState(config.getModel());
   const [shellModeActive, setShellModeActive] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
@@ -203,46 +220,15 @@ export const App = (props: AppProps) => {
   const [constrainHeight, setConstrainHeight] = useState<boolean>(true);
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
-  const [userTier, setUserTier] = useState<UserTierId | undefined>(undefined);
   const [ideContextState, setIdeContextState] = useState<
     IdeContext | undefined
   >();
   const [showEscapePrompt, setShowEscapePrompt] = useState(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   const { isFolderTrustDialogOpen, handleFolderTrustSelect } =
     useFolderTrust(settings);
 
-  const { vimEnabled, vimMode, toggleVimEnabled } = useVimMode();
-
-  const {
-    handleSlashCommand,
-    slashCommands,
-    pendingHistoryItems: pendingSlashCommandHistoryItems,
-    commandContext,
-    shellConfirmationRequest,
-    confirmationRequest,
-  } = useSlashCommandProcessor(
-    config,
-    settings,
-    addItem,
-    clearItems,
-    loadHistory,
-    refreshStatic,
-    ui.setDebugMessage,
-    ui.openThemeDialog,
-    ui.openAuthDialog,
-    ui.openEditorDialog,
-    ui.toggleCorgiMode,
-    ui.quit,
-    ui.openPrivacyNotice,
-    () => {
-      /* openSettingsDialog */
-    },
-    toggleVimEnabled,
-    setIsProcessing,
-    setGeminiMdFileCount,
-  );
+  const { vimEnabled, vimMode } = useVimMode();
 
   useEffect(() => {
     const unsubscribe = ideContext.subscribeToIdeContext(setIdeContextState);
@@ -287,12 +273,6 @@ export const App = (props: AppProps) => {
   );
 
   useEffect(() => {
-    if (!isAuthenticating) {
-      setUserTier(config.getGeminiClient()?.getUserTier());
-    }
-  }, [config, isAuthenticating]);
-
-  useEffect(() => {
     const checkModelChange = () => {
       const configModel = config.getModel();
       if (configModel !== currentModel) {
@@ -326,12 +306,21 @@ export const App = (props: AppProps) => {
 
   const [userMessages, setUserMessages] = useState<string[]>([]);
 
+  const buffer = useTextBuffer({
+    initialText: '',
+    viewport: { height: 10, width: inputWidth },
+    stdin,
+    setRawMode,
+    isValidPath,
+    shellModeActive,
+  });
+
   const handleUserCancel = useCallback(() => {
     const lastUserMessage = userMessages.at(-1);
     if (lastUserMessage) {
       buffer.setText(lastUserMessage);
     }
-  }, [userMessages]);
+  }, [userMessages, buffer]);
 
   const {
     streamingState,
@@ -389,15 +378,6 @@ export const App = (props: AppProps) => {
     },
     [handleSlashCommand, settings],
   );
-
-  const buffer = useTextBuffer({
-    initialText: '',
-    viewport: { height: 10, width: inputWidth },
-    stdin,
-    setRawMode,
-    isValidPath,
-    shellModeActive,
-  });
 
   const { handleInput: vimHandleInput } = useVim(buffer, handleFinalSubmit);
   const pendingHistoryItems = [
@@ -551,7 +531,7 @@ export const App = (props: AppProps) => {
       return terminalHeight - fullFooterMeasurement.height - staticExtraHeight;
     }
     return terminalHeight - staticExtraHeight;
-  }, [terminalHeight, consoleMessages, showErrorDetails]);
+  }, [terminalHeight]);
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -691,7 +671,6 @@ export const App = (props: AppProps) => {
         </OverflowProvider>
 
         <Box flexDirection="column" ref={mainControlsRef}>
-          {updateInfo && <UpdateNotification message={updateInfo.message} />}
           {startupWarnings.length > 0 && (
             <Box
               borderStyle="round"
@@ -716,9 +695,7 @@ export const App = (props: AppProps) => {
           ) : isFolderTrustDialogOpen ? (
             <FolderTrustDialog onSelect={handleFolderTrustSelect} />
           ) : shellConfirmationRequest ? (
-            <ShellConfirmationDialog
-              request={shellConfirmationRequest}
-            />
+            <ShellConfirmationDialog request={shellConfirmationRequest} />
           ) : confirmationRequest ? (
             <Box flexDirection="column">
               {confirmationRequest.prompt}
