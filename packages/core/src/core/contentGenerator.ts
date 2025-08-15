@@ -56,10 +56,10 @@ export type ContentGeneratorConfig = {
   proxy?: string | undefined;
 };
 
-export function createContentGeneratorConfig(
+export async function createContentGeneratorConfig(
   config: Config,
   authType: AuthType | undefined,
-): ContentGeneratorConfig {
+): Promise<ContentGeneratorConfig> {
   const geminiApiKey = process.env.GEMINI_API_KEY || undefined;
   const googleApiKey = process.env.GOOGLE_API_KEY || undefined;
   const googleCloudProject = process.env.GOOGLE_CLOUD_PROJECT || undefined;
@@ -85,7 +85,7 @@ export function createContentGeneratorConfig(
   if (authType === AuthType.USE_GEMINI && geminiApiKey) {
     contentGeneratorConfig.apiKey = geminiApiKey;
     contentGeneratorConfig.vertexai = false;
-    getEffectiveModel(
+    contentGeneratorConfig.model = await getEffectiveModel(
       contentGeneratorConfig.apiKey,
       contentGeneratorConfig.model,
       contentGeneratorConfig.proxy,

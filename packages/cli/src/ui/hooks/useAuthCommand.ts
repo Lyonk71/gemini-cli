@@ -14,6 +14,9 @@ import {
 } from '@google/gemini-cli-core';
 import { runExitCleanup } from '../../utils/cleanup.js';
 
+// This flag must be at the module level to survive React's StrictMode remounting
+let authFlowHasRun = false;
+
 export const useAuthCommand = (
   settings: LoadedSettings,
   setAuthError: (error: string | null) => void,
@@ -30,6 +33,11 @@ export const useAuthCommand = (
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   useEffect(() => {
+    if (authFlowHasRun) {
+      return;
+    }
+    authFlowHasRun = true;
+
     const authFlow = async () => {
       const authType = settings.merged.selectedAuthType;
       if (isAuthDialogOpen || !authType) {
@@ -49,7 +57,8 @@ export const useAuthCommand = (
     };
 
     void authFlow();
-  }, [isAuthDialogOpen, settings, config, setAuthError, openAuthDialog]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAuthSelect = useCallback(
     async (authType: AuthType | undefined, scope: SettingScope) => {
