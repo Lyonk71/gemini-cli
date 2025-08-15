@@ -30,7 +30,7 @@ import { BuiltinCommandLoader } from '../../services/BuiltinCommandLoader.js';
 import { FileCommandLoader } from '../../services/FileCommandLoader.js';
 import { McpPromptLoader } from '../../services/McpPromptLoader.js';
 
-import { UIContextActions } from './useUI.js';
+import { useUI } from './useUI.js';
 /**
  * Hook to define and process slash commands (e.g., /help, /clear).
  */
@@ -41,11 +41,11 @@ export const useSlashCommandProcessor = (
   clearItems: UseHistoryManagerReturn['clearItems'],
   loadHistory: UseHistoryManagerReturn['loadHistory'],
   refreshStatic: () => void,
-  ui: UIContextActions,
   toggleVimEnabled: () => Promise<boolean>,
   setIsProcessing: (isProcessing: boolean) => void,
   setGeminiMdFileCount: (count: number) => void,
 ) => {
+  const ui = useUI();
   const session = useSessionStats();
   const [commands, setCommands] = useState<readonly SlashCommand[]>([]);
   const [shellConfirmationRequest, setShellConfirmationRequest] =
