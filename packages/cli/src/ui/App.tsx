@@ -6,26 +6,17 @@
 
 import { type PartListUnion } from '@google/genai';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import {
-  Box,
-  DOMElement,
-  measureElement,
-  Static,
-  Text,
-  useStdin,
-  useStdout,
-} from 'ink';
+import { Box, DOMElement, measureElement, Static, Text } from 'ink';
 import {
   StreamingState,
   type HistoryItem,
   type HistoryItemWithoutId,
   type SlashCommandProcessorResult,
+  ThoughtSummary,
 } from './types.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
-import { useGeminiStream } from './hooks/useGeminiStream.js';
 import { useLoadingIndicator } from './hooks/useLoadingIndicator.js';
 import { useAutoAcceptIndicator } from './hooks/useAutoAcceptIndicator.js';
-import { useConsoleMessages } from './hooks/useConsoleMessages.js';
 import { Header } from './components/Header.js';
 import { LoadingIndicator } from './components/LoadingIndicator.js';
 import { AutoAcceptIndicator } from './components/AutoAcceptIndicator.js';
@@ -60,18 +51,14 @@ import {
   IdeIntegrationNudge,
   IdeIntegrationNudgeResult,
 } from './IdeIntegrationNudge.js';
-import { useLogger } from './hooks/useLogger.js';
 import { StreamingContext } from './contexts/StreamingContext.js';
 import { useSessionStats } from './contexts/SessionContext.js';
 import { useGitBranchName } from './hooks/useGitBranchName.js';
 import { useFocus } from './hooks/useFocus.js';
 import { useBracketedPaste } from './hooks/useBracketedPaste.js';
-import { useTextBuffer } from './components/shared/text-buffer.js';
-import { useVim } from './hooks/vim.js';
+import { TextBuffer } from './components/shared/text-buffer.js';
 import { useKeypress, Key } from './hooks/useKeypress.js';
 import { keyMatchers, Command } from './keyMatchers.js';
-import * as fs from 'fs';
-import ansiEscapes from 'ansi-escapes';
 import { OverflowProvider } from './contexts/OverflowContext.js';
 import { ShowMoreLines } from './components/ShowMoreLines.js';
 import { PrivacyNotice } from './privacy/PrivacyNotice.js';
@@ -141,6 +128,21 @@ interface AppProps extends UseHistoryManagerReturn {
   isProcessing: boolean;
   geminiMdFileCount: number;
   refreshStatic: () => void;
+  streamingState: StreamingState;
+  initError: string | null;
+  pendingGeminiHistoryItems: HistoryItemWithoutId[];
+  thought: ThoughtSummary | null;
+  cancelOngoingRequest?: () => void;
+  shellModeActive: boolean;
+  setShellModeActive: (value: boolean) => void;
+  userMessages: string[];
+  buffer: TextBuffer;
+  inputWidth: number;
+  suggestionsWidth: number;
+  handleFinalSubmit: (value: string) => void;
+  handleClearScreen: () => void;
+  vimHandleInput: (key: Key) => boolean;
+  isInputActive: boolean;
 }
 
 export const App = (props: AppProps) => {
@@ -150,8 +152,6 @@ export const App = (props: AppProps) => {
     startupWarnings = [],
     version,
     history,
-    addItem,
-    clearItems,
     isThemeDialogOpen,
     themeError,
     handleThemeSelect,
@@ -177,22 +177,31 @@ export const App = (props: AppProps) => {
     commandContext,
     shellConfirmationRequest,
     confirmationRequest,
-    isProcessing,
     geminiMdFileCount,
     refreshStatic,
+    streamingState,
+    initError,
+    pendingGeminiHistoryItems,
+    thought,
+    cancelOngoingRequest,
+    shellModeActive,
+    setShellModeActive,
+    userMessages,
+    buffer,
+    inputWidth,
+    suggestionsWidth,
+    handleFinalSubmit,
+    handleClearScreen,
+    vimHandleInput,
+    isInputActive,
   } = props;
 
   const ui = useUI();
   const isFocused = useFocus();
   useBracketedPaste();
-  const { stdout } = useStdout();
   const nightly = version.includes('nightly');
 
-  const {
-    consoleMessages,
-    handleNewMessage,
-    clearConsoleMessages: clearConsoleMessagesState,
-  } = ui;
+  const { consoleMessages, handleNewMessage } = ui;
 
   const [idePromptAnswered, setIdePromptAnswered] = useState(false);
   const currentIDE = config.getIdeClient().getCurrentIde();
@@ -205,10 +214,8 @@ export const App = (props: AppProps) => {
 
   const { stats: sessionStats } = useSessionStats();
   const [staticNeedsRefresh, setStaticNeedsRefresh] = useState(false);
-  const [staticKey, setStaticKey] = useState(0);
 
   const [currentModel, setCurrentModel] = useState(config.getModel());
-  const [shellModeActive, setShellModeActive] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
   const [showToolDescriptions, setShowToolDescriptions] =
     useState<boolean>(false);
@@ -218,8 +225,6 @@ export const App = (props: AppProps) => {
   const [ctrlDPressedOnce, setCtrlDPressedOnce] = useState(false);
   const ctrlDTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [constrainHeight, setConstrainHeight] = useState<boolean>(true);
-  const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
-    useState<boolean>(false);
   const [ideContextState, setIdeContextState] = useState<
     IdeContext | undefined
   >();
@@ -286,77 +291,7 @@ export const App = (props: AppProps) => {
 
   const { rows: terminalHeight, columns: terminalWidth } = useTerminalSize();
   const isNarrow = isNarrowWidth(terminalWidth);
-  const { stdin, setRawMode } = useStdin();
   const isInitialMount = useRef(true);
-
-  const widthFraction = 0.9;
-  const inputWidth = Math.max(
-    20,
-    Math.floor(terminalWidth * widthFraction) - 3,
-  );
-  const suggestionsWidth = Math.max(20, Math.floor(terminalWidth * 0.8));
-
-  const isValidPath = useCallback((filePath: string): boolean => {
-    try {
-      return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
-    } catch (_e) {
-      return false;
-    }
-  }, []);
-
-  const [userMessages, setUserMessages] = useState<string[]>([]);
-
-  const buffer = useTextBuffer({
-    initialText: '',
-    viewport: { height: 10, width: inputWidth },
-    stdin,
-    setRawMode,
-    isValidPath,
-    shellModeActive,
-  });
-
-  const handleUserCancel = useCallback(() => {
-    const lastUserMessage = userMessages.at(-1);
-    if (lastUserMessage) {
-      buffer.setText(lastUserMessage);
-    }
-  }, [userMessages, buffer]);
-
-  const {
-    streamingState,
-    submitQuery,
-    initError,
-    pendingHistoryItems: pendingGeminiHistoryItems,
-    thought,
-    cancelOngoingRequest,
-  } = useGeminiStream(
-    config.getGeminiClient(),
-    history,
-    addItem,
-    config,
-    ui.setDebugMessage,
-    handleSlashCommand,
-    shellModeActive,
-    () => settings.merged.preferredEditor as EditorType,
-    ui.openAuthDialog,
-    async () => {
-      /* performMemoryRefresh */
-    },
-    modelSwitchedFromQuotaError,
-    setModelSwitchedFromQuotaError,
-    refreshStatic,
-    handleUserCancel,
-  );
-
-  const handleFinalSubmit = useCallback(
-    (submittedValue: string) => {
-      const trimmedValue = submittedValue.trim();
-      if (trimmedValue.length > 0) {
-        submitQuery(trimmedValue);
-      }
-    },
-    [submitQuery],
-  );
 
   const handleIdePromptComplete = useCallback(
     (result: IdeIntegrationNudgeResult) => {
@@ -379,7 +314,6 @@ export const App = (props: AppProps) => {
     [handleSlashCommand, settings],
   );
 
-  const { handleInput: vimHandleInput } = useVim(buffer, handleFinalSubmit);
   const pendingHistoryItems = [
     ...pendingSlashCommandHistoryItems,
     ...pendingGeminiHistoryItems,
@@ -479,48 +413,6 @@ export const App = (props: AppProps) => {
 
   useKeypress(handleGlobalKeypress, { isActive: true });
 
-  const logger = useLogger();
-
-  useEffect(() => {
-    const fetchUserMessages = async () => {
-      const pastMessagesRaw = (await logger?.getPreviousUserMessages()) || [];
-      const currentSessionUserMessages = history
-        .filter(
-          (item): item is HistoryItem & { type: 'user'; text: string } =>
-            item.type === 'user' &&
-            typeof item.text === 'string' &&
-            item.text.trim() !== '',
-        )
-        .map((item) => item.text)
-        .reverse();
-      const combinedMessages = [
-        ...currentSessionUserMessages,
-        ...pastMessagesRaw,
-      ];
-      const deduplicatedMessages: string[] = [];
-      if (combinedMessages.length > 0) {
-        deduplicatedMessages.push(combinedMessages[0]);
-        for (let i = 1; i < combinedMessages.length; i++) {
-          if (combinedMessages[i] !== combinedMessages[i - 1]) {
-            deduplicatedMessages.push(combinedMessages[i]);
-          }
-        }
-      }
-      setUserMessages(deduplicatedMessages.reverse());
-    };
-    fetchUserMessages();
-  }, [history, logger]);
-
-  const isInputActive =
-    streamingState === StreamingState.Idle && !initError && !isProcessing;
-
-  const handleClearScreen = useCallback(() => {
-    clearItems();
-    clearConsoleMessagesState();
-    console.clear();
-    refreshStatic();
-  }, [clearItems, clearConsoleMessagesState, refreshStatic]);
-
   const mainControlsRef = useRef<DOMElement>(null);
   const pendingHistoryItemRef = useRef<DOMElement>(null);
 
@@ -584,12 +476,12 @@ export const App = (props: AppProps) => {
       !showPrivacyNotice &&
       geminiClient?.isInitialized?.()
     ) {
-      submitQuery(initialPrompt);
+      handleFinalSubmit(initialPrompt);
       initialPromptSubmitted.current = true;
     }
   }, [
     initialPrompt,
-    submitQuery,
+    handleFinalSubmit,
     isAuthenticating,
     isAuthDialogOpen,
     isThemeDialogOpen,
@@ -628,7 +520,6 @@ export const App = (props: AppProps) => {
     <StreamingContext.Provider value={streamingState}>
       <Box flexDirection="column" width="90%">
         <Static
-          key={staticKey}
           items={[
             <Box flexDirection="column" key="header">
               {!settings.merged.hideBanner && (

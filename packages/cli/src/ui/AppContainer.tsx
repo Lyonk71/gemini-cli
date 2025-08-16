@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { App } from './App.js';
-import { UIContext } from './hooks/useUI.js';
-import { type HistoryItem } from './types.js';
-import { type Config } from '@google/gemini-cli-core';
+import { UIContext, useUI } from './hooks/useUI.js';
+import { HistoryItem, StreamingState } from './types.js';
+import { type Config, EditorType } from '@google/gemini-cli-core';
 import { type LoadedSettings } from '../config/settings.js';
 import process from 'node:process';
 import {
@@ -24,6 +24,13 @@ import { useVimMode, VimModeProvider } from './contexts/VimModeContext.js';
 import { SessionStatsProvider } from './contexts/SessionContext.js';
 import { InitializationResult } from '../core/initializer.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
+import { useTerminalSize } from './hooks/useTerminalSize.js';
+import { useStdin } from 'ink';
+import * as fs from 'fs';
+import { useTextBuffer } from './components/shared/text-buffer.js';
+import { useLogger } from './hooks/useLogger.js';
+import { useGeminiStream } from './hooks/useGeminiStream.js';
+import { useVim } from './hooks/vim.js';
 
 interface AppContainerProps {
   config: Config;
@@ -70,15 +77,95 @@ interface AppLogicProps extends AppContainerProps {
   openSettingsDialog: () => void;
   closeSettingsDialog: () => void;
   setShowPrivacyNotice: (show: boolean) => void;
+  setIsProcessing: (isProcessing: boolean) => void;
+  setGeminiMdFileCount: (count: number) => void;
 }
 
 const AppLogic = (props: AppLogicProps) => {
-  const { config, settings, historyManager, setShowPrivacyNotice, ...rest } =
-    props;
-  const { addItem, clearItems, loadHistory } = historyManager;
+  const {
+    config,
+    settings,
+    historyManager,
+    setShowPrivacyNotice,
+    isProcessing,
+    geminiMdFileCount,
+    ...rest
+  } = props;
+  const { history, addItem, clearItems, loadHistory, updateItem } =
+    historyManager;
   const { toggleVimEnabled } = useVimMode();
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [geminiMdFileCount, setGeminiMdFileCount] = useState<number>(0);
+  const ui = useUI();
+
+  const [shellModeActive, setShellModeActive] = useState(false);
+  const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
+    useState<boolean>(false);
+
+  const logger = useLogger();
+  const [userMessages, setUserMessages] = useState<string[]>([]);
+
+  const { columns: terminalWidth } = useTerminalSize();
+  const { stdin, setRawMode } = useStdin();
+
+  const widthFraction = 0.9;
+  const inputWidth = Math.max(
+    20,
+    Math.floor(terminalWidth * widthFraction) - 3,
+  );
+  const suggestionsWidth = Math.max(20, Math.floor(terminalWidth * 0.8));
+
+  const isValidPath = useCallback((filePath: string): boolean => {
+    try {
+      return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+    } catch (_e) {
+      return false;
+    }
+  }, []);
+
+  const buffer = useTextBuffer({
+    initialText: '',
+    viewport: { height: 10, width: inputWidth },
+    stdin,
+    setRawMode,
+    isValidPath,
+    shellModeActive,
+  });
+
+  const handleUserCancel = useCallback(() => {
+    const lastUserMessage = userMessages.at(-1);
+    if (lastUserMessage) {
+      buffer.setText(lastUserMessage);
+    }
+  }, [userMessages, buffer]);
+
+  useEffect(() => {
+    const fetchUserMessages = async () => {
+      const pastMessagesRaw = (await logger?.getPreviousUserMessages()) || [];
+      const currentSessionUserMessages = history
+        .filter(
+          (item): item is HistoryItem & { type: 'user'; text: string } =>
+            item.type === 'user' &&
+            typeof item.text === 'string' &&
+            item.text.trim() !== '',
+        )
+        .map((item) => item.text)
+        .reverse();
+      const combinedMessages = [
+        ...currentSessionUserMessages,
+        ...pastMessagesRaw,
+      ];
+      const deduplicatedMessages: string[] = [];
+      if (combinedMessages.length > 0) {
+        deduplicatedMessages.push(combinedMessages[0]);
+        for (let i = 1; i < combinedMessages.length; i++) {
+          if (combinedMessages[i] !== combinedMessages[i - 1]) {
+            deduplicatedMessages.push(combinedMessages[i]);
+          }
+        }
+      }
+      setUserMessages(deduplicatedMessages.reverse());
+    };
+    fetchUserMessages();
+  }, [history, logger]);
 
   const refreshStatic = useCallback(() => {
     // This will be implemented in a later phase.
@@ -99,9 +186,57 @@ const AppLogic = (props: AppLogicProps) => {
     loadHistory,
     refreshStatic,
     toggleVimEnabled,
-    setIsProcessing,
-    setGeminiMdFileCount,
+    props.setIsProcessing,
+    props.setGeminiMdFileCount,
   );
+
+  const {
+    streamingState,
+    submitQuery,
+    initError,
+    pendingHistoryItems: pendingGeminiHistoryItems,
+    thought,
+    cancelOngoingRequest,
+  } = useGeminiStream(
+    config.getGeminiClient(),
+    history,
+    addItem,
+    config,
+    ui.setDebugMessage,
+    handleSlashCommand,
+    shellModeActive,
+    () => settings.merged.preferredEditor as EditorType,
+    ui.openAuthDialog,
+    async () => {
+      /* performMemoryRefresh */
+    },
+    modelSwitchedFromQuotaError,
+    setModelSwitchedFromQuotaError,
+    refreshStatic,
+    handleUserCancel,
+  );
+
+  const handleFinalSubmit = useCallback(
+    (submittedValue: string) => {
+      const trimmedValue = submittedValue.trim();
+      if (trimmedValue.length > 0) {
+        submitQuery(trimmedValue);
+      }
+    },
+    [submitQuery],
+  );
+
+  const handleClearScreen = useCallback(() => {
+    clearItems();
+    ui.clearConsoleMessages();
+    console.clear();
+    refreshStatic();
+  }, [clearItems, ui, refreshStatic]);
+
+  const { handleInput: vimHandleInput } = useVim(buffer, handleFinalSubmit);
+
+  const isInputActive =
+    streamingState === StreamingState.Idle && !initError && !isProcessing;
 
   return (
     <App
@@ -123,6 +258,21 @@ const AppLogic = (props: AppLogicProps) => {
       isProcessing={isProcessing}
       geminiMdFileCount={geminiMdFileCount}
       refreshStatic={refreshStatic}
+      streamingState={streamingState}
+      initError={initError}
+      pendingGeminiHistoryItems={pendingGeminiHistoryItems}
+      thought={thought}
+      cancelOngoingRequest={cancelOngoingRequest}
+      shellModeActive={shellModeActive}
+      setShellModeActive={setShellModeActive}
+      userMessages={userMessages}
+      buffer={buffer}
+      inputWidth={inputWidth}
+      suggestionsWidth={suggestionsWidth}
+      handleFinalSubmit={handleFinalSubmit}
+      handleClearScreen={handleClearScreen}
+      vimHandleInput={vimHandleInput}
+      isInputActive={isInputActive}
     />
   );
 };
@@ -143,6 +293,8 @@ export const AppContainer = (props: AppContainerProps) => {
     initializationResult.authError,
   );
   const [editorError, setEditorError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [geminiMdFileCount, setGeminiMdFileCount] = useState<number>(0);
 
   const {
     consoleMessages,
@@ -236,8 +388,10 @@ export const AppContainer = (props: AppContainerProps) => {
             themeError={themeError}
             authError={authError}
             editorError={editorError}
-            isProcessing={false}
-            geminiMdFileCount={0}
+            isProcessing={isProcessing}
+            geminiMdFileCount={geminiMdFileCount}
+            setIsProcessing={setIsProcessing}
+            setGeminiMdFileCount={setGeminiMdFileCount}
             isThemeDialogOpen={isThemeDialogOpen}
             isAuthDialogOpen={isAuthDialogOpen}
             isEditorDialogOpen={isEditorDialogOpen}

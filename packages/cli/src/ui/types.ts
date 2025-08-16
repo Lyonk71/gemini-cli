@@ -5,11 +5,14 @@
  */
 
 import {
+  ThoughtSummary,
   ToolCallConfirmationDetails,
   ToolConfirmationOutcome,
   ToolResultDisplay,
 } from '@google/gemini-cli-core';
 import { ReactNode } from 'react';
+
+export type { ThoughtSummary };
 
 // Only defining the state enum needed by the UI
 export enum StreamingState {
@@ -72,11 +75,13 @@ export type HistoryItemUser = HistoryItemBase & {
 export type HistoryItemGemini = HistoryItemBase & {
   type: 'gemini';
   text: string;
+  thought?: ThoughtSummary | null;
 };
 
 export type HistoryItemGeminiContent = HistoryItemBase & {
   type: 'gemini_content';
   text: string;
+  thought?: ThoughtSummary | null;
 };
 
 export type HistoryItemInfo = HistoryItemBase & {
