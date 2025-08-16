@@ -38,6 +38,7 @@ import {
   IdeConnectionEvent,
   IdeConnectionType,
 } from '@google/gemini-cli-core';
+import { initializeApp } from './core/initializer.js';
 import { validateAuthMethod } from './config/auth.js';
 import { setMaxSizedBoxDebugging } from './ui/components/shared/MaxSizedBox.js';
 import { validateNonInteractiveAuth } from './validateNonInterActiveAuth.js';
@@ -199,13 +200,7 @@ export async function main() {
   // Load custom themes from settings
   themeManager.loadCustomThemes(settings.merged.customThemes);
 
-  if (settings.merged.theme) {
-    if (!themeManager.setActiveTheme(settings.merged.theme)) {
-      // If the theme is not found during initial load, log a warning and continue.
-      // The useThemeCommand hook in App.tsx will handle opening the dialog.
-      console.warn(`Warning: Theme "${settings.merged.theme}" not found.`);
-    }
-  }
+  const initializationResult = await initializeApp(config, settings);
 
   // hop into sandbox if we are outside and sandboxing is enabled
   if (!process.env.SANDBOX) {
@@ -272,6 +267,7 @@ export async function main() {
             settings={settings}
             startupWarnings={startupWarnings}
             version={version}
+            initializationResult={initializationResult}
           />
         </SettingsContext.Provider>
       </React.StrictMode>,

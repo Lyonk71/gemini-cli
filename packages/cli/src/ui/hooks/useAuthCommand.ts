@@ -4,26 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { LoadedSettings, SettingScope } from '../../config/settings.js';
 import {
   AuthType,
   Config,
   clearCachedCredentialFile,
-  getErrorMessage,
 } from '@google/gemini-cli-core';
 import { runExitCleanup } from '../../utils/cleanup.js';
-
-// This flag must be at the module level to survive React's StrictMode remounting
-let authFlowHasRun = false;
 
 export const useAuthCommand = (
   settings: LoadedSettings,
   setAuthError: (error: string | null) => void,
   config: Config,
+  shouldOpenAuthDialog: boolean,
 ) => {
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(
-    settings.merged.selectedAuthType === undefined,
+    shouldOpenAuthDialog,
   );
 
   const openAuthDialog = useCallback(() => {
@@ -31,34 +28,6 @@ export const useAuthCommand = (
   }, []);
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-
-  useEffect(() => {
-    if (authFlowHasRun) {
-      return;
-    }
-    authFlowHasRun = true;
-
-    const authFlow = async () => {
-      const authType = settings.merged.selectedAuthType;
-      if (isAuthDialogOpen || !authType) {
-        return;
-      }
-
-      try {
-        setIsAuthenticating(true);
-        await config.refreshAuth(authType);
-        console.log(`Authenticated via "${authType}".`);
-      } catch (e) {
-        setAuthError(`Failed to login. Message: ${getErrorMessage(e)}`);
-        openAuthDialog();
-      } finally {
-        setIsAuthenticating(false);
-      }
-    };
-
-    void authFlow();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleAuthSelect = useCallback(
     async (authType: AuthType | undefined, scope: SettingScope) => {

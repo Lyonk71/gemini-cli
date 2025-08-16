@@ -22,12 +22,14 @@ import { useSettingsCommand } from './hooks/useSettingsCommand.js';
 import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useVimMode, VimModeProvider } from './contexts/VimModeContext.js';
 import { SessionStatsProvider } from './contexts/SessionContext.js';
+import { InitializationResult } from '../core/initializer.js';
 
 interface AppContainerProps {
   config: Config;
   settings: LoadedSettings;
   startupWarnings?: string[];
   version: string;
+  initializationResult: InitializationResult;
 }
 
 interface AppLogicProps extends AppContainerProps {
@@ -125,7 +127,7 @@ const AppLogic = (props: AppLogicProps) => {
 };
 
 export const AppContainer = (props: AppContainerProps) => {
-  const { settings, config } = props;
+  const { settings, config, initializationResult } = props;
   const historyManager = useHistory();
   const [corgiMode, setCorgiMode] = useState(false);
   const [debugMessage, setDebugMessage] = useState<string>('');
@@ -133,8 +135,12 @@ export const AppContainer = (props: AppContainerProps) => {
     HistoryItem[] | null
   >(null);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
-  const [themeError, setThemeError] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [themeError, setThemeError] = useState<string | null>(
+    initializationResult.themeError,
+  );
+  const [authError, setAuthError] = useState<string | null>(
+    initializationResult.authError,
+  );
   const [editorError, setEditorError] = useState<string | null>(null);
 
   const {
@@ -142,7 +148,12 @@ export const AppContainer = (props: AppContainerProps) => {
     openThemeDialog,
     handleThemeSelect,
     handleThemeHighlight,
-  } = useThemeCommand(settings, setThemeError, historyManager.addItem);
+  } = useThemeCommand(
+    settings,
+    setThemeError,
+    historyManager.addItem,
+    initializationResult.themeError,
+  );
 
   const {
     isAuthDialogOpen,
@@ -150,7 +161,12 @@ export const AppContainer = (props: AppContainerProps) => {
     handleAuthSelect,
     isAuthenticating,
     cancelAuthentication,
-  } = useAuthCommand(settings, setAuthError, config);
+  } = useAuthCommand(
+    settings,
+    setAuthError,
+    config,
+    initializationResult.shouldOpenAuthDialog,
+  );
 
   const {
     isEditorDialogOpen,
