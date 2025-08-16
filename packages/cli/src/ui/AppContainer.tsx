@@ -23,6 +23,7 @@ import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useVimMode, VimModeProvider } from './contexts/VimModeContext.js';
 import { SessionStatsProvider } from './contexts/SessionContext.js';
 import { InitializationResult } from '../core/initializer.js';
+import { useConsoleMessages } from './hooks/useConsoleMessages.js';
 
 interface AppContainerProps {
   config: Config;
@@ -144,6 +145,12 @@ export const AppContainer = (props: AppContainerProps) => {
   const [editorError, setEditorError] = useState<string | null>(null);
 
   const {
+    consoleMessages,
+    handleNewMessage,
+    clearConsoleMessages: clearConsoleMessagesState,
+  } = useConsoleMessages();
+
+  const {
     isThemeDialogOpen,
     openThemeDialog,
     handleThemeSelect,
@@ -196,6 +203,9 @@ export const AppContainer = (props: AppContainerProps) => {
           process.exit(0);
         }, 100);
       },
+      consoleMessages,
+      handleNewMessage,
+      clearConsoleMessages: clearConsoleMessagesState,
     }),
     [
       openAuthDialog,
@@ -206,6 +216,9 @@ export const AppContainer = (props: AppContainerProps) => {
       setDebugMessage,
       setShowPrivacyNotice,
       setCorgiMode,
+      consoleMessages,
+      handleNewMessage,
+      clearConsoleMessagesState,
     ],
   );
 

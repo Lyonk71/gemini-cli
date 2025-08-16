@@ -5,7 +5,7 @@
  */
 
 import { createContext, useContext } from 'react';
-import { HistoryItem } from '../types.js';
+import { ConsoleMessageItem, HistoryItem } from '../types.js';
 
 export interface UIContextActions {
   openHelp: () => void;
@@ -17,6 +17,9 @@ export interface UIContextActions {
   toggleCorgiMode: () => void;
   setDebugMessage: (message: string) => void;
   quit: (messages: HistoryItem[]) => void;
+  consoleMessages: ConsoleMessageItem[];
+  handleNewMessage: (message: ConsoleMessageItem) => void;
+  clearConsoleMessages: () => void;
 }
 
 export const UIContext = createContext<UIContextActions | null>(null);

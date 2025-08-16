@@ -188,6 +188,12 @@ export const App = (props: AppProps) => {
   const { stdout } = useStdout();
   const nightly = version.includes('nightly');
 
+  const {
+    consoleMessages,
+    handleNewMessage,
+    clearConsoleMessages: clearConsoleMessagesState,
+  } = ui;
+
   const [idePromptAnswered, setIdePromptAnswered] = useState(false);
   const currentIDE = config.getIdeClient().getCurrentIde();
   const shouldShowIdePrompt =
@@ -196,12 +202,6 @@ export const App = (props: AppProps) => {
     !config.getIdeMode() &&
     !settings.merged.hasSeenIdeIntegrationNudge &&
     !idePromptAnswered;
-
-  const {
-    consoleMessages,
-    handleNewMessage,
-    clearConsoleMessages: clearConsoleMessagesState,
-  } = useConsoleMessages();
 
   const { stats: sessionStats } = useSessionStats();
   const [staticNeedsRefresh, setStaticNeedsRefresh] = useState(false);
