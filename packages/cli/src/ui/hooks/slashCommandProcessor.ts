@@ -22,6 +22,7 @@ import {
   MessageType,
   HistoryItemWithoutId,
   SlashCommandProcessorResult,
+  HistoryItem,
 } from '../types.js';
 import { LoadedSettings } from '../../config/settings.js';
 import { type CommandContext, type SlashCommand } from '../commands/types.js';
@@ -30,7 +31,17 @@ import { BuiltinCommandLoader } from '../../services/BuiltinCommandLoader.js';
 import { FileCommandLoader } from '../../services/FileCommandLoader.js';
 import { McpPromptLoader } from '../../services/McpPromptLoader.js';
 
-import { useUI } from './useUI.js';
+interface SlashCommandProcessorActions {
+  openAuthDialog: () => void;
+  openThemeDialog: () => void;
+  openEditorDialog: () => void;
+  openPrivacyNotice: () => void;
+  openSettingsDialog: () => void;
+  quit: (messages: HistoryItem[]) => void;
+  setDebugMessage: (message: string) => void;
+  toggleCorgiMode: () => void;
+}
+
 /**
  * Hook to define and process slash commands (e.g., /help, /clear).
  */
@@ -44,8 +55,8 @@ export const useSlashCommandProcessor = (
   toggleVimEnabled: () => Promise<boolean>,
   setIsProcessing: (isProcessing: boolean) => void,
   setGeminiMdFileCount: (count: number) => void,
+  actions: SlashCommandProcessorActions,
 ) => {
-  const ui = useUI();
   const session = useSessionStats();
   const [commands, setCommands] = useState<readonly SlashCommand[]>([]);
   const [shellConfirmationRequest, setShellConfirmationRequest] =
@@ -157,10 +168,10 @@ export const useSlashCommandProcessor = (
           refreshStatic();
         },
         loadHistory,
-        setDebugMessage: ui.setDebugMessage,
+        setDebugMessage: actions.setDebugMessage,
         pendingItem: pendingCompressionItemRef.current,
         setPendingItem: setPendingCompressionItem,
-        toggleCorgiMode: ui.toggleCorgiMode,
+        toggleCorgiMode: actions.toggleCorgiMode,
         toggleVimEnabled,
         setGeminiMdFileCount,
       },
@@ -179,7 +190,7 @@ export const useSlashCommandProcessor = (
       clearItems,
       refreshStatic,
       session.stats,
-      ui,
+      actions,
       pendingCompressionItemRef,
       setPendingCompressionItem,
       toggleVimEnabled,
@@ -339,19 +350,19 @@ export const useSlashCommandProcessor = (
                 case 'dialog':
                   switch (result.dialog) {
                     case 'auth':
-                      ui.openAuthDialog();
+                      actions.openAuthDialog();
                       return { type: 'handled' };
                     case 'theme':
-                      ui.openThemeDialog();
+                      actions.openThemeDialog();
                       return { type: 'handled' };
                     case 'editor':
-                      ui.openEditorDialog();
+                      actions.openEditorDialog();
                       return { type: 'handled' };
                     case 'privacy':
-                      ui.openPrivacyNotice();
+                      actions.openPrivacyNotice();
                       return { type: 'handled' };
                     case 'settings':
-                      ui.openSettingsDialog();
+                      actions.openSettingsDialog();
                       return { type: 'handled' };
                     case 'help':
                       return { type: 'handled' };
@@ -373,7 +384,7 @@ export const useSlashCommandProcessor = (
                   return { type: 'handled' };
                 }
                 case 'quit':
-                  ui.quit(result.messages);
+                  actions.quit(result.messages);
                   return { type: 'handled' };
 
                 case 'submit_prompt':
@@ -496,7 +507,7 @@ export const useSlashCommandProcessor = (
     [
       config,
       addItem,
-      ui,
+      actions,
       commands,
       commandContext,
       addMessage,

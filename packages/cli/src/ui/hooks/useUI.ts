@@ -4,8 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { PartListUnion } from '@google/genai';
 import { createContext, useContext } from 'react';
-import { ConsoleMessageItem, HistoryItem } from '../types.js';
+import {
+  ConsoleMessageItem,
+  HistoryItem,
+  SlashCommandProcessorResult,
+} from '../types.js';
 
 export interface UIContextActions {
   openHelp: () => void;
@@ -20,6 +25,13 @@ export interface UIContextActions {
   consoleMessages: ConsoleMessageItem[];
   handleNewMessage: (message: ConsoleMessageItem) => void;
   clearConsoleMessages: () => void;
+  handleSlashCommand: (
+    rawQuery: PartListUnion,
+    oneTimeShellAllowlist?: Set<string> | undefined,
+    overwriteConfirmed?: boolean | undefined,
+  ) => Promise<false | SlashCommandProcessorResult>;
+  handleFinalSubmit: (value: string) => void;
+  handleClearScreen: () => void;
 }
 
 export const UIContext = createContext<UIContextActions | null>(null);

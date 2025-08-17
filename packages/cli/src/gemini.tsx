@@ -46,6 +46,8 @@ import { checkForUpdates } from './ui/utils/updateCheck.js';
 import { handleAutoUpdate } from './utils/handleAutoUpdate.js';
 import { appEvents, AppEvent } from './utils/events.js';
 import { SettingsContext } from './ui/contexts/SettingsContext.js';
+import { SessionStatsProvider } from './ui/contexts/SessionContext.js';
+import { VimModeProvider } from './ui/contexts/VimModeContext.js';
 
 export function validateDnsResolutionOrder(
   order: string | undefined,
@@ -262,13 +264,17 @@ export async function main() {
     const instance = render(
       <React.StrictMode>
         <SettingsContext.Provider value={settings}>
-          <AppContainer
-            config={config}
-            settings={settings}
-            startupWarnings={startupWarnings}
-            version={version}
-            initializationResult={initializationResult}
-          />
+          <SessionStatsProvider>
+            <VimModeProvider settings={settings}>
+              <AppContainer
+                config={config}
+                settings={settings}
+                startupWarnings={startupWarnings}
+                version={version}
+                initializationResult={initializationResult}
+              />
+            </VimModeProvider>
+          </SessionStatsProvider>
         </SettingsContext.Provider>
       </React.StrictMode>,
       { exitOnCtrlC: false },

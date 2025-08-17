@@ -6,15 +6,11 @@
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { App } from './App.js';
-import { UIContext, useUI } from './hooks/useUI.js';
+import { UIContext } from './hooks/useUI.js';
 import { HistoryItem, StreamingState } from './types.js';
-import { type Config, EditorType } from '@google/gemini-cli-core';
-import { type LoadedSettings } from '../config/settings.js';
+import { EditorType } from '@google/gemini-cli-core';
 import process from 'node:process';
-import {
-  useHistory,
-  UseHistoryManagerReturn,
-} from './hooks/useHistoryManager.js';
+import { useHistory } from './hooks/useHistoryManager.js';
 import { useThemeCommand } from './hooks/useThemeCommand.js';
 import { useAuthCommand } from './hooks/useAuthCommand.js';
 import { useEditorSettings } from './hooks/useEditorSettings.js';
@@ -22,7 +18,6 @@ import { useSettingsCommand } from './hooks/useSettingsCommand.js';
 import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useVimMode, VimModeProvider } from './contexts/VimModeContext.js';
 import { SessionStatsProvider } from './contexts/SessionContext.js';
-import { InitializationResult } from '../core/initializer.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useStdin } from 'ink';
@@ -31,6 +26,9 @@ import { useTextBuffer } from './components/shared/text-buffer.js';
 import { useLogger } from './hooks/useLogger.js';
 import { useGeminiStream } from './hooks/useGeminiStream.js';
 import { useVim } from './hooks/vim.js';
+import { Config } from '@google/gemini-cli-core';
+import { LoadedSettings } from '../config/settings.js';
+import { InitializationResult } from '../core/initializer.js';
 
 interface AppContainerProps {
   config: Config;
@@ -40,62 +38,24 @@ interface AppContainerProps {
   initializationResult: InitializationResult;
 }
 
-interface AppLogicProps extends AppContainerProps {
-  historyManager: UseHistoryManagerReturn;
-  corgiMode: boolean;
-  debugMessage: string;
-  quittingMessages: HistoryItem[] | null;
-  showPrivacyNotice: boolean;
-  themeError: string | null;
-  authError: string | null;
-  editorError: string | null;
-  isProcessing: boolean;
-  geminiMdFileCount: number;
-  isThemeDialogOpen: boolean;
-  isAuthDialogOpen: boolean;
-  isEditorDialogOpen: boolean;
-  isSettingsDialogOpen: boolean;
-  openThemeDialog: () => void;
-  handleThemeSelect: (
-    themeName: string | undefined,
-    scope: import('../config/settings.js').SettingScope,
-  ) => void;
-  handleThemeHighlight: (themeName: string | undefined) => void;
-  openAuthDialog: () => void;
-  handleAuthSelect: (
-    authType: import('@google/gemini-cli-core').AuthType | undefined,
-    scope: import('../config/settings.js').SettingScope,
-  ) => void;
-  isAuthenticating: boolean;
-  cancelAuthentication: () => void;
-  openEditorDialog: () => void;
-  handleEditorSelect: (
-    editorType: import('@google/gemini-cli-core').EditorType | undefined,
-    scope: import('../config/settings.js').SettingScope,
-  ) => void;
-  exitEditorDialog: () => void;
-  openSettingsDialog: () => void;
-  closeSettingsDialog: () => void;
-  setShowPrivacyNotice: (show: boolean) => void;
-  setIsProcessing: (isProcessing: boolean) => void;
-  setGeminiMdFileCount: (count: number) => void;
-}
-
-const AppLogic = (props: AppLogicProps) => {
-  const {
-    config,
-    settings,
-    historyManager,
-    setShowPrivacyNotice,
-    isProcessing,
-    geminiMdFileCount,
-    ...rest
-  } = props;
-  const { history, addItem, clearItems, loadHistory, updateItem } =
-    historyManager;
-  const { toggleVimEnabled } = useVimMode();
-  const ui = useUI();
-
+export const AppContainer = (props: AppContainerProps) => {
+  const { settings, config, initializationResult } = props;
+  const historyManager = useHistory();
+  const [corgiMode, setCorgiMode] = useState(false);
+  const [debugMessage, setDebugMessage] = useState<string>('');
+  const [quittingMessages, setQuittingMessages] = useState<
+    HistoryItem[] | null
+  >(null);
+  const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
+  const [themeError, setThemeError] = useState<string | null>(
+    initializationResult.themeError,
+  );
+  const [authError, setAuthError] = useState<string | null>(
+    initializationResult.authError,
+  );
+  const [editorError, setEditorError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [geminiMdFileCount, setGeminiMdFileCount] = useState<number>(0);
   const [shellModeActive, setShellModeActive] = useState(false);
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
@@ -140,7 +100,7 @@ const AppLogic = (props: AppLogicProps) => {
   useEffect(() => {
     const fetchUserMessages = async () => {
       const pastMessagesRaw = (await logger?.getPreviousUserMessages()) || [];
-      const currentSessionUserMessages = history
+      const currentSessionUserMessages = historyManager.history
         .filter(
           (item): item is HistoryItem & { type: 'user'; text: string } =>
             item.type === 'user' &&
@@ -165,136 +125,11 @@ const AppLogic = (props: AppLogicProps) => {
       setUserMessages(deduplicatedMessages.reverse());
     };
     fetchUserMessages();
-  }, [history, logger]);
+  }, [historyManager.history, logger]);
 
   const refreshStatic = useCallback(() => {
     // This will be implemented in a later phase.
   }, []);
-
-  const {
-    handleSlashCommand,
-    slashCommands,
-    pendingHistoryItems: pendingSlashCommandHistoryItems,
-    commandContext,
-    shellConfirmationRequest,
-    confirmationRequest,
-  } = useSlashCommandProcessor(
-    config,
-    settings,
-    addItem,
-    clearItems,
-    loadHistory,
-    refreshStatic,
-    toggleVimEnabled,
-    props.setIsProcessing,
-    props.setGeminiMdFileCount,
-  );
-
-  const {
-    streamingState,
-    submitQuery,
-    initError,
-    pendingHistoryItems: pendingGeminiHistoryItems,
-    thought,
-    cancelOngoingRequest,
-  } = useGeminiStream(
-    config.getGeminiClient(),
-    history,
-    addItem,
-    config,
-    ui.setDebugMessage,
-    handleSlashCommand,
-    shellModeActive,
-    () => settings.merged.preferredEditor as EditorType,
-    ui.openAuthDialog,
-    async () => {
-      /* performMemoryRefresh */
-    },
-    modelSwitchedFromQuotaError,
-    setModelSwitchedFromQuotaError,
-    refreshStatic,
-    handleUserCancel,
-  );
-
-  const handleFinalSubmit = useCallback(
-    (submittedValue: string) => {
-      const trimmedValue = submittedValue.trim();
-      if (trimmedValue.length > 0) {
-        submitQuery(trimmedValue);
-      }
-    },
-    [submitQuery],
-  );
-
-  const handleClearScreen = useCallback(() => {
-    clearItems();
-    ui.clearConsoleMessages();
-    console.clear();
-    refreshStatic();
-  }, [clearItems, ui, refreshStatic]);
-
-  const { handleInput: vimHandleInput } = useVim(buffer, handleFinalSubmit);
-
-  const isInputActive =
-    streamingState === StreamingState.Idle && !initError && !isProcessing;
-
-  return (
-    <App
-      {...rest}
-      config={config}
-      settings={settings}
-      history={historyManager.history}
-      addItem={historyManager.addItem}
-      clearItems={historyManager.clearItems}
-      loadHistory={historyManager.loadHistory}
-      updateItem={historyManager.updateItem}
-      setShowPrivacyNotice={setShowPrivacyNotice}
-      handleSlashCommand={handleSlashCommand}
-      slashCommands={slashCommands}
-      pendingSlashCommandHistoryItems={pendingSlashCommandHistoryItems}
-      commandContext={commandContext}
-      shellConfirmationRequest={shellConfirmationRequest}
-      confirmationRequest={confirmationRequest}
-      isProcessing={isProcessing}
-      geminiMdFileCount={geminiMdFileCount}
-      refreshStatic={refreshStatic}
-      streamingState={streamingState}
-      initError={initError}
-      pendingGeminiHistoryItems={pendingGeminiHistoryItems}
-      thought={thought}
-      cancelOngoingRequest={cancelOngoingRequest}
-      shellModeActive={shellModeActive}
-      setShellModeActive={setShellModeActive}
-      userMessages={userMessages}
-      buffer={buffer}
-      inputWidth={inputWidth}
-      suggestionsWidth={suggestionsWidth}
-      handleFinalSubmit={handleFinalSubmit}
-      handleClearScreen={handleClearScreen}
-      vimHandleInput={vimHandleInput}
-      isInputActive={isInputActive}
-    />
-  );
-};
-
-export const AppContainer = (props: AppContainerProps) => {
-  const { settings, config, initializationResult } = props;
-  const historyManager = useHistory();
-  const [corgiMode, setCorgiMode] = useState(false);
-  const [debugMessage, setDebugMessage] = useState<string>('');
-  const [quittingMessages, setQuittingMessages] = useState<
-    HistoryItem[] | null
-  >(null);
-  const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
-  const [themeError, setThemeError] = useState<string | null>(
-    initializationResult.themeError,
-  );
-  const [authError, setAuthError] = useState<string | null>(
-    initializationResult.authError,
-  );
-  const [editorError, setEditorError] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [geminiMdFileCount, setGeminiMdFileCount] = useState<number>(0);
 
   const {
     consoleMessages,
@@ -337,6 +172,104 @@ export const AppContainer = (props: AppContainerProps) => {
   const { isSettingsDialogOpen, openSettingsDialog, closeSettingsDialog } =
     useSettingsCommand();
 
+  const { toggleVimEnabled } = useVimMode();
+
+  const slashCommandActions = useMemo(
+    () => ({
+      openAuthDialog,
+      openThemeDialog,
+      openEditorDialog,
+      openPrivacyNotice: () => setShowPrivacyNotice(true),
+      openSettingsDialog,
+      quit: (messages: HistoryItem[]) => {
+        setQuittingMessages(messages);
+        setTimeout(() => {
+          process.exit(0);
+        }, 100);
+      },
+      setDebugMessage,
+      toggleCorgiMode: () => setCorgiMode((prev) => !prev),
+    }),
+    [
+      openAuthDialog,
+      openThemeDialog,
+      openEditorDialog,
+      openSettingsDialog,
+      setQuittingMessages,
+      setDebugMessage,
+      setShowPrivacyNotice,
+      setCorgiMode,
+    ],
+  );
+
+  const {
+    handleSlashCommand,
+    slashCommands,
+    pendingHistoryItems: pendingSlashCommandHistoryItems,
+    commandContext,
+    shellConfirmationRequest,
+    confirmationRequest,
+  } = useSlashCommandProcessor(
+    config,
+    settings,
+    historyManager.addItem,
+    historyManager.clearItems,
+    historyManager.loadHistory,
+    refreshStatic,
+    toggleVimEnabled,
+    setIsProcessing,
+    setGeminiMdFileCount,
+    slashCommandActions,
+  );
+
+  const {
+    streamingState,
+    submitQuery,
+    initError,
+    pendingHistoryItems: pendingGeminiHistoryItems,
+    thought,
+    cancelOngoingRequest,
+  } = useGeminiStream(
+    config.getGeminiClient(),
+    historyManager.history,
+    historyManager.addItem,
+    config,
+    setDebugMessage,
+    handleSlashCommand,
+    shellModeActive,
+    () => settings.merged.preferredEditor as EditorType,
+    openAuthDialog,
+    async () => {
+      /* performMemoryRefresh */
+    },
+    modelSwitchedFromQuotaError,
+    setModelSwitchedFromQuotaError,
+    refreshStatic,
+    handleUserCancel,
+  );
+
+  const handleFinalSubmit = useCallback(
+    (submittedValue: string) => {
+      const trimmedValue = submittedValue.trim();
+      if (trimmedValue.length > 0) {
+        submitQuery(trimmedValue);
+      }
+    },
+    [submitQuery],
+  );
+
+  const handleClearScreen = useCallback(() => {
+    historyManager.clearItems();
+    clearConsoleMessagesState();
+    console.clear();
+    refreshStatic();
+  }, [historyManager, clearConsoleMessagesState, refreshStatic]);
+
+  const { handleInput: vimHandleInput } = useVim(buffer, handleFinalSubmit);
+
+  const isInputActive =
+    streamingState === StreamingState.Idle && !initError && !isProcessing;
+
   const uiContextValue = useMemo(
     () => ({
       openHelp: () => {
@@ -358,6 +291,9 @@ export const AppContainer = (props: AppContainerProps) => {
       consoleMessages,
       handleNewMessage,
       clearConsoleMessages: clearConsoleMessagesState,
+      handleSlashCommand,
+      handleFinalSubmit,
+      handleClearScreen,
     }),
     [
       openAuthDialog,
@@ -371,47 +307,61 @@ export const AppContainer = (props: AppContainerProps) => {
       consoleMessages,
       handleNewMessage,
       clearConsoleMessagesState,
+      handleSlashCommand,
+      handleFinalSubmit,
+      handleClearScreen,
     ],
   );
 
   return (
-    <SessionStatsProvider>
-      <VimModeProvider settings={props.settings}>
-        <UIContext.Provider value={uiContextValue}>
-          <AppLogic
-            {...props}
-            historyManager={historyManager}
-            corgiMode={corgiMode}
-            debugMessage={debugMessage}
-            quittingMessages={quittingMessages}
-            showPrivacyNotice={showPrivacyNotice}
-            themeError={themeError}
-            authError={authError}
-            editorError={editorError}
-            isProcessing={isProcessing}
-            geminiMdFileCount={geminiMdFileCount}
-            setIsProcessing={setIsProcessing}
-            setGeminiMdFileCount={setGeminiMdFileCount}
-            isThemeDialogOpen={isThemeDialogOpen}
-            isAuthDialogOpen={isAuthDialogOpen}
-            isEditorDialogOpen={isEditorDialogOpen}
-            isSettingsDialogOpen={isSettingsDialogOpen}
-            openThemeDialog={openThemeDialog}
-            handleThemeSelect={handleThemeSelect}
-            handleThemeHighlight={handleThemeHighlight}
-            openAuthDialog={openAuthDialog}
-            handleAuthSelect={handleAuthSelect}
-            isAuthenticating={isAuthenticating}
-            cancelAuthentication={cancelAuthentication}
-            openEditorDialog={openEditorDialog}
-            handleEditorSelect={handleEditorSelect}
-            exitEditorDialog={exitEditorDialog}
-            openSettingsDialog={openSettingsDialog}
-            closeSettingsDialog={closeSettingsDialog}
-            setShowPrivacyNotice={setShowPrivacyNotice}
-          />
-        </UIContext.Provider>
-      </VimModeProvider>
-    </SessionStatsProvider>
+    <UIContext.Provider value={uiContextValue}>
+      <App
+        config={config}
+        settings={settings}
+        startupWarnings={props.startupWarnings}
+        version={props.version}
+        history={historyManager.history}
+        isThemeDialogOpen={isThemeDialogOpen}
+        themeError={themeError}
+        handleThemeSelect={handleThemeSelect}
+        handleThemeHighlight={handleThemeHighlight}
+        isAuthenticating={isAuthenticating}
+        authError={authError}
+        cancelAuthentication={cancelAuthentication}
+        isAuthDialogOpen={isAuthDialogOpen}
+        handleAuthSelect={handleAuthSelect}
+        editorError={editorError}
+        isEditorDialogOpen={isEditorDialogOpen}
+        handleEditorSelect={handleEditorSelect}
+        exitEditorDialog={exitEditorDialog}
+        showPrivacyNotice={showPrivacyNotice}
+        corgiMode={corgiMode}
+        debugMessage={debugMessage}
+        quittingMessages={quittingMessages}
+        isSettingsDialogOpen={isSettingsDialogOpen}
+        closeSettingsDialog={closeSettingsDialog}
+        slashCommands={slashCommands}
+        pendingSlashCommandHistoryItems={pendingSlashCommandHistoryItems}
+        commandContext={commandContext}
+        shellConfirmationRequest={shellConfirmationRequest}
+        confirmationRequest={confirmationRequest}
+        isProcessing={isProcessing}
+        geminiMdFileCount={geminiMdFileCount}
+        refreshStatic={refreshStatic}
+        streamingState={streamingState}
+        initError={initError}
+        pendingGeminiHistoryItems={pendingGeminiHistoryItems}
+        thought={thought}
+        cancelOngoingRequest={cancelOngoingRequest}
+        shellModeActive={shellModeActive}
+        setShellModeActive={setShellModeActive}
+        userMessages={userMessages}
+        buffer={buffer}
+        inputWidth={inputWidth}
+        suggestionsWidth={suggestionsWidth}
+        vimHandleInput={vimHandleInput}
+        isInputActive={isInputActive}
+      />
+    </UIContext.Provider>
   );
 };

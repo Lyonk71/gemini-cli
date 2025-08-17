@@ -26,9 +26,8 @@ export const useThemeCommand = (
   addItem: (item: Omit<HistoryItem, 'id'>, timestamp: number) => void,
   initialThemeError: string | null,
 ): UseThemeCommandReturn => {
-  const [isThemeDialogOpen, setIsThemeDialogOpen] = useState(
-    !!initialThemeError,
-  );
+  const [isThemeDialogOpen, setIsThemeDialogOpen] =
+    useState(!!initialThemeError);
 
   const openThemeDialog = useCallback(() => {
     if (process.env.NO_COLOR) {

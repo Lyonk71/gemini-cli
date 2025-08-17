@@ -19,9 +19,8 @@ export const useAuthCommand = (
   config: Config,
   shouldOpenAuthDialog: boolean,
 ) => {
-  const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(
-    shouldOpenAuthDialog,
-  );
+  const [isAuthDialogOpen, setIsAuthDialogOpen] =
+    useState(shouldOpenAuthDialog);
 
   const openAuthDialog = useCallback(() => {
     setIsAuthDialogOpen(true);

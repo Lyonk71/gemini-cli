@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { type PartListUnion } from '@google/genai';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Box, DOMElement, measureElement, Static, Text } from 'ink';
 import {
   StreamingState,
   type HistoryItem,
   type HistoryItemWithoutId,
-  type SlashCommandProcessorResult,
   ThoughtSummary,
 } from './types.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
@@ -36,7 +34,6 @@ import { Tips } from './components/Tips.js';
 import { DetailedMessagesDisplay } from './components/DetailedMessagesDisplay.js';
 import { HistoryItemDisplay } from './components/HistoryItemDisplay.js';
 import { ContextSummaryDisplay } from './components/ContextSummaryDisplay.js';
-import { UseHistoryManagerReturn } from './hooks/useHistoryManager.js';
 import {
   type Config,
   getAllGeminiMdFilenames,
@@ -72,11 +69,12 @@ import { type CommandContext, type SlashCommand } from './commands/types.js';
 
 const CTRL_EXIT_PROMPT_DURATION_MS = 1000;
 
-interface AppProps extends UseHistoryManagerReturn {
+interface AppProps {
   config: Config;
   settings: LoadedSettings;
   startupWarnings?: string[];
   version: string;
+  history: HistoryItem[];
   isThemeDialogOpen: boolean;
   themeError: string | null;
   handleThemeSelect: (
@@ -100,17 +98,11 @@ interface AppProps extends UseHistoryManagerReturn {
   ) => void;
   exitEditorDialog: () => void;
   showPrivacyNotice: boolean;
-  setShowPrivacyNotice: (show: boolean) => void;
   corgiMode: boolean;
   debugMessage: string;
   quittingMessages: HistoryItem[] | null;
   isSettingsDialogOpen: boolean;
   closeSettingsDialog: () => void;
-  handleSlashCommand: (
-    rawQuery: PartListUnion,
-    oneTimeShellAllowlist?: Set<string> | undefined,
-    overwriteConfirmed?: boolean | undefined,
-  ) => Promise<false | SlashCommandProcessorResult>;
   slashCommands: readonly SlashCommand[];
   pendingSlashCommandHistoryItems: HistoryItemWithoutId[];
   commandContext: CommandContext;
@@ -139,8 +131,6 @@ interface AppProps extends UseHistoryManagerReturn {
   buffer: TextBuffer;
   inputWidth: number;
   suggestionsWidth: number;
-  handleFinalSubmit: (value: string) => void;
-  handleClearScreen: () => void;
   vimHandleInput: (key: Key) => boolean;
   isInputActive: boolean;
 }
@@ -165,13 +155,11 @@ export const App = (props: AppProps) => {
     handleEditorSelect,
     exitEditorDialog,
     showPrivacyNotice,
-    setShowPrivacyNotice,
     corgiMode,
     debugMessage,
     quittingMessages,
     isSettingsDialogOpen,
     closeSettingsDialog,
-    handleSlashCommand,
     slashCommands,
     pendingSlashCommandHistoryItems,
     commandContext,
@@ -190,8 +178,6 @@ export const App = (props: AppProps) => {
     buffer,
     inputWidth,
     suggestionsWidth,
-    handleFinalSubmit,
-    handleClearScreen,
     vimHandleInput,
     isInputActive,
   } = props;
@@ -201,7 +187,7 @@ export const App = (props: AppProps) => {
   useBracketedPaste();
   const nightly = version.includes('nightly');
 
-  const { consoleMessages, handleNewMessage } = ui;
+  const { consoleMessages, handleNewMessage, handleSlashCommand } = ui;
 
   const [idePromptAnswered, setIdePromptAnswered] = useState(false);
   const currentIDE = config.getIdeClient().getCurrentIde();
@@ -476,12 +462,12 @@ export const App = (props: AppProps) => {
       !showPrivacyNotice &&
       geminiClient?.isInitialized?.()
     ) {
-      handleFinalSubmit(initialPrompt);
+      ui.handleFinalSubmit(initialPrompt);
       initialPromptSubmitted.current = true;
     }
   }, [
     initialPrompt,
-    handleFinalSubmit,
+    ui,
     isAuthenticating,
     isAuthDialogOpen,
     isThemeDialogOpen,
@@ -674,7 +660,7 @@ export const App = (props: AppProps) => {
             </Box>
           ) : showPrivacyNotice ? (
             <PrivacyNotice
-              onExit={() => setShowPrivacyNotice(false)}
+              onExit={() => ui.openPrivacyNotice()}
               config={config}
             />
           ) : (
@@ -757,9 +743,9 @@ export const App = (props: AppProps) => {
                   buffer={buffer}
                   inputWidth={inputWidth}
                   suggestionsWidth={suggestionsWidth}
-                  onSubmit={handleFinalSubmit}
+                  onSubmit={ui.handleFinalSubmit}
                   userMessages={userMessages}
-                  onClearScreen={handleClearScreen}
+                  onClearScreen={ui.handleClearScreen}
                   config={config}
                   slashCommands={slashCommands}
                   commandContext={commandContext}
