@@ -4,11 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { App } from './App.js';
 import { UIContext } from './hooks/useUI.js';
 import { HistoryItem, StreamingState } from './types.js';
-import { EditorType } from '@google/gemini-cli-core';
+import {
+  EditorType,
+  Config,
+  ideContext,
+  IdeContext,
+} from '@google/gemini-cli-core';
 import process from 'node:process';
 import { useHistory } from './hooks/useHistoryManager.js';
 import { useThemeCommand } from './hooks/useThemeCommand.js';
@@ -16,8 +21,7 @@ import { useAuthCommand } from './hooks/useAuthCommand.js';
 import { useEditorSettings } from './hooks/useEditorSettings.js';
 import { useSettingsCommand } from './hooks/useSettingsCommand.js';
 import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
-import { useVimMode, VimModeProvider } from './contexts/VimModeContext.js';
-import { SessionStatsProvider } from './contexts/SessionContext.js';
+import { useVimMode } from './contexts/VimModeContext.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useStdin } from 'ink';
@@ -26,9 +30,19 @@ import { useTextBuffer } from './components/shared/text-buffer.js';
 import { useLogger } from './hooks/useLogger.js';
 import { useGeminiStream } from './hooks/useGeminiStream.js';
 import { useVim } from './hooks/vim.js';
-import { Config } from '@google/gemini-cli-core';
-import { LoadedSettings } from '../config/settings.js';
+import { LoadedSettings, SettingScope } from '../config/settings.js';
 import { InitializationResult } from '../core/initializer.js';
+import { useFocus } from './hooks/useFocus.js';
+import { useBracketedPaste } from './hooks/useBracketedPaste.js';
+import { useKeypress, Key } from './hooks/useKeypress.js';
+import { keyMatchers, Command } from './keyMatchers.js';
+import { useLoadingIndicator } from './hooks/useLoadingIndicator.js';
+import { FolderTrustChoice } from './components/FolderTrustDialog.js';
+import { useFolderTrust } from './hooks/useFolderTrust.js';
+import { IdeIntegrationNudgeResult } from './IdeIntegrationNudge.js';
+import { appEvents, AppEvent } from '../utils/events.js';
+
+const CTRL_EXIT_PROMPT_DURATION_MS = 1000;
 
 interface AppContainerProps {
   config: Config;
@@ -313,9 +327,193 @@ export const AppContainer = (props: AppContainerProps) => {
     ],
   );
 
+  // New state and logic moved from App.tsx
+  const isFocused = useFocus();
+  useBracketedPaste();
+
+  const [idePromptAnswered, setIdePromptAnswered] = useState(false);
+  const currentIDE = config.getIdeClient().getCurrentIde();
+  const shouldShowIdePrompt = Boolean(
+    config.getIdeModeFeature() &&
+    currentIDE &&
+    !config.getIdeMode() &&
+    !settings.merged.hasSeenIdeIntegrationNudge &&
+    !idePromptAnswered
+  );
+
+  const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
+  const [showToolDescriptions, setShowToolDescriptions] =
+    useState<boolean>(false);
+
+  const [ctrlCPressedOnce, setCtrlCPressedOnce] = useState(false);
+  const ctrlCTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [ctrlDPressedOnce, setCtrlDPressedOnce] = useState(false);
+  const ctrlDTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [constrainHeight, setConstrainHeight] = useState<boolean>(true);
+  const [ideContextState, setIdeContextState] = useState<
+    IdeContext | undefined
+  >();
+  const [showEscapePrompt, setShowEscapePrompt] = useState(false);
+
+  const { isFolderTrustDialogOpen, handleFolderTrustSelect } =
+    useFolderTrust(settings);
+
+  useEffect(() => {
+    const unsubscribe = ideContext.subscribeToIdeContext(setIdeContextState);
+    setIdeContextState(ideContext.getIdeContext());
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const openDebugConsole = () => {
+      setShowErrorDetails(true);
+      setConstrainHeight(false);
+    };
+    appEvents.on(AppEvent.OpenDebugConsole, openDebugConsole);
+
+    const logErrorHandler = (errorMessage: unknown) => {
+      handleNewMessage({
+        type: 'error',
+        content: String(errorMessage),
+        count: 1,
+      });
+    };
+    appEvents.on(AppEvent.LogError, logErrorHandler);
+
+    return () => {
+      appEvents.off(AppEvent.OpenDebugConsole, openDebugConsole);
+      appEvents.off(AppEvent.LogError, logErrorHandler);
+    };
+  }, [handleNewMessage]);
+
+  const handleEscapePromptChange = useCallback((showPrompt: boolean) => {
+    setShowEscapePrompt(showPrompt);
+  }, []);
+
+  const handleIdePromptComplete = useCallback(
+    (result: IdeIntegrationNudgeResult) => {
+      if (result === 'yes') {
+        handleSlashCommand('/ide install');
+        settings.setValue(
+          SettingScope.User,
+          'hasSeenIdeIntegrationNudge',
+          true,
+        );
+      } else if (result === 'dismiss') {
+        settings.setValue(
+          SettingScope.User,
+          'hasSeenIdeIntegrationNudge',
+          true,
+        );
+      }
+      setIdePromptAnswered(true);
+    },
+    [handleSlashCommand, settings],
+  );
+
+  const { elapsedTime, currentLoadingPhrase } =
+    useLoadingIndicator(streamingState);
+
+  const handleExit = useCallback(
+    (
+      pressedOnce: boolean,
+      setPressedOnce: (value: boolean) => void,
+      timerRef: React.MutableRefObject<NodeJS.Timeout | null>,
+    ) => {
+      if (pressedOnce) {
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+        }
+        handleSlashCommand('/quit');
+      } else {
+        setPressedOnce(true);
+        timerRef.current = setTimeout(() => {
+          setPressedOnce(false);
+          timerRef.current = null;
+        }, CTRL_EXIT_PROMPT_DURATION_MS);
+      }
+    },
+    [handleSlashCommand],
+  );
+
+  const handleGlobalKeypress = useCallback(
+    (key: Key) => {
+      let enteringConstrainHeightMode = false;
+      if (!constrainHeight) {
+        enteringConstrainHeightMode = true;
+        setConstrainHeight(true);
+      }
+
+      if (keyMatchers[Command.SHOW_ERROR_DETAILS](key)) {
+        setShowErrorDetails((prev) => !prev);
+      } else if (keyMatchers[Command.TOGGLE_TOOL_DESCRIPTIONS](key)) {
+        const newValue = !showToolDescriptions;
+        setShowToolDescriptions(newValue);
+
+        const mcpServers = config.getMcpServers();
+        if (Object.keys(mcpServers || {}).length > 0) {
+          handleSlashCommand(newValue ? '/mcp desc' : '/mcp nodesc');
+        }
+      } else if (
+        keyMatchers[Command.TOGGLE_IDE_CONTEXT_DETAIL](key) &&
+        config.getIdeMode() &&
+        ideContextState
+      ) {
+        handleSlashCommand('/ide status');
+      } else if (keyMatchers[Command.QUIT](key)) {
+        if (isAuthenticating) {
+          return;
+        }
+        if (!ctrlCPressedOnce) {
+          cancelOngoingRequest?.();
+        }
+        handleExit(ctrlCPressedOnce, setCtrlCPressedOnce, ctrlCTimerRef);
+      } else if (keyMatchers[Command.EXIT](key)) {
+        if (buffer.text.length > 0) {
+          return;
+        }
+        handleExit(ctrlDPressedOnce, setCtrlDPressedOnce, ctrlDTimerRef);
+      } else if (
+        keyMatchers[Command.SHOW_MORE_LINES](key) &&
+        !enteringConstrainHeightMode
+      ) {
+        setConstrainHeight(false);
+      }
+    },
+    [
+      constrainHeight,
+      setConstrainHeight,
+      setShowErrorDetails,
+      showToolDescriptions,
+      setShowToolDescriptions,
+      config,
+      ideContextState,
+      handleExit,
+      ctrlCPressedOnce,
+      setCtrlCPressedOnce,
+      ctrlCTimerRef,
+      buffer.text.length,
+      ctrlDPressedOnce,
+      setCtrlDPressedOnce,
+      ctrlDTimerRef,
+      handleSlashCommand,
+      isAuthenticating,
+      cancelOngoingRequest,
+    ],
+  );
+
+  useKeypress(handleGlobalKeypress, { isActive: true });
+
+  const filteredConsoleMessages = useMemo(() => {
+    if (config.getDebugMode()) {
+      return consoleMessages;
+    }
+    return consoleMessages.filter((msg) => msg.type !== 'debug');
+  }, [consoleMessages, config]);
+
   return (
     <UIContext.Provider value={uiContextValue}>
-      <App
+            <App
         config={config}
         settings={settings}
         startupWarnings={props.startupWarnings}
@@ -327,7 +525,6 @@ export const AppContainer = (props: AppContainerProps) => {
         handleThemeHighlight={handleThemeHighlight}
         isAuthenticating={isAuthenticating}
         authError={authError}
-        cancelAuthentication={cancelAuthentication}
         isAuthDialogOpen={isAuthDialogOpen}
         handleAuthSelect={handleAuthSelect}
         editorError={editorError}
@@ -345,14 +542,11 @@ export const AppContainer = (props: AppContainerProps) => {
         commandContext={commandContext}
         shellConfirmationRequest={shellConfirmationRequest}
         confirmationRequest={confirmationRequest}
-        isProcessing={isProcessing}
         geminiMdFileCount={geminiMdFileCount}
-        refreshStatic={refreshStatic}
         streamingState={streamingState}
         initError={initError}
         pendingGeminiHistoryItems={pendingGeminiHistoryItems}
         thought={thought}
-        cancelOngoingRequest={cancelOngoingRequest}
         shellModeActive={shellModeActive}
         setShellModeActive={setShellModeActive}
         userMessages={userMessages}
@@ -361,6 +555,24 @@ export const AppContainer = (props: AppContainerProps) => {
         suggestionsWidth={suggestionsWidth}
         vimHandleInput={vimHandleInput}
         isInputActive={isInputActive}
+        shouldShowIdePrompt={shouldShowIdePrompt}
+        handleIdePromptComplete={handleIdePromptComplete}
+        isFolderTrustDialogOpen={isFolderTrustDialogOpen ?? false}
+        handleFolderTrustSelect={handleFolderTrustSelect}
+        constrainHeight={constrainHeight}
+        setConstrainHeight={setConstrainHeight}
+        showErrorDetails={showErrorDetails}
+        filteredConsoleMessages={filteredConsoleMessages}
+        ideContextState={ideContextState}
+        showToolDescriptions={showToolDescriptions}
+        ctrlCPressedOnce={ctrlCPressedOnce}
+        ctrlDPressedOnce={ctrlDPressedOnce}
+        showEscapePrompt={showEscapePrompt}
+        onEscapePromptChange={handleEscapePromptChange}
+        isFocused={isFocused}
+        elapsedTime={elapsedTime.toString()}
+        currentLoadingPhrase={currentLoadingPhrase}
+        refreshStatic={refreshStatic}
       />
     </UIContext.Provider>
   );
