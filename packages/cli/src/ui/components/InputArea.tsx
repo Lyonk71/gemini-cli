@@ -20,19 +20,21 @@ import { isNarrowWidth } from '../utils/isNarrowWidth.js';
 import { useUIState } from '../contexts/UIStateContext.js';
 import { useUIActions } from '../contexts/UIActionsContext.js';
 import { useVimMode } from '../contexts/VimModeContext.js';
-import { Config, ApprovalMode } from '@google/gemini-cli-core';
+import { useConfig } from '../contexts/ConfigContext.js';
+import { ApprovalMode } from '@google/gemini-cli-core';
 import { StreamingState } from '../types.js';
 
 interface InputAreaProps {
-  config: Config;
   contextFileNames: string[];
   showAutoAcceptIndicator: ApprovalMode;
   footerProps: Omit<FooterProps, 'vimMode'>;
 }
 
 export const InputArea = (props: InputAreaProps) => {
-  const { config, contextFileNames, showAutoAcceptIndicator, footerProps } =
+  const { contextFileNames, showAutoAcceptIndicator, footerProps } =
     props;
+
+  const config = useConfig();
 
   const uiState = useUIState();
   const uiActions = useUIActions();

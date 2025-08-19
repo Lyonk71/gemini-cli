@@ -13,9 +13,10 @@ import {
 } from './contexts/UIStateContext.js';
 import {
   UIActionsContext,
-  useUIActions,
   UIActions,
 } from './contexts/UIActionsContext.js';
+import { ConfigContext } from './contexts/ConfigContext.js';
+import { SettingsContext } from './contexts/SettingsContext.js';
 import { HistoryItem, StreamingState } from './types.js';
 import {
   EditorType,
@@ -609,12 +610,14 @@ export const AppContainer = (props: AppContainerProps) => {
   return (
     <UIStateContext.Provider value={uiState}>
       <UIActionsContext.Provider value={uiActions}>
-        <App
-          config={config}
-          settings={settings}
-          startupWarnings={props.startupWarnings}
-          version={props.version}
-        />
+        <ConfigContext.Provider value={config}>
+          <SettingsContext.Provider value={settings}>
+            <App
+              startupWarnings={props.startupWarnings}
+              version={props.version}
+            />
+          </SettingsContext.Provider>
+        </ConfigContext.Provider>
       </UIActionsContext.Provider>
     </UIStateContext.Provider>
   );

@@ -10,7 +10,6 @@ import { HistoryItemDisplay } from './HistoryItemDisplay.js';
 import { ShowMoreLines } from './ShowMoreLines.js';
 import { OverflowProvider } from '../contexts/OverflowContext.js';
 import { HistoryItemWithoutId } from '../types.js';
-import { Config } from '@google/gemini-cli-core';
 import { useUIState } from '../contexts/UIStateContext.js';
 
 interface MainContentProps {
@@ -18,7 +17,6 @@ interface MainContentProps {
   mainAreaWidth: number;
   staticAreaMaxItemHeight: number;
   availableTerminalHeight: number | undefined;
-  config: Config;
   pendingHistoryItemRef: React.RefObject<DOMElement | null>;
 }
 
@@ -28,7 +26,6 @@ export const MainContent = (props: MainContentProps) => {
     mainAreaWidth,
     staticAreaMaxItemHeight,
     availableTerminalHeight,
-    config,
     pendingHistoryItemRef,
   } = props;
 
@@ -44,7 +41,6 @@ export const MainContent = (props: MainContentProps) => {
             key={h.id}
             item={h}
             isPending={false}
-            config={config}
             commands={uiState.slashCommands}
           />
         ))}
@@ -62,7 +58,6 @@ export const MainContent = (props: MainContentProps) => {
               terminalWidth={mainAreaWidth}
               item={{ ...item, id: 0 }}
               isPending={true}
-              config={config}
               isFocused={!uiState.isEditorDialogOpen}
             />
           ))}

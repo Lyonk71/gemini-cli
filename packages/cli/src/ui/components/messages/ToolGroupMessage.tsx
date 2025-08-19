@@ -10,15 +10,14 @@ import { IndividualToolCallDisplay, ToolCallStatus } from '../../types.js';
 import { ToolMessage } from './ToolMessage.js';
 import { ToolConfirmationMessage } from './ToolConfirmationMessage.js';
 import { Colors } from '../../colors.js';
-import { Config } from '@google/gemini-cli-core';
 import { SHELL_COMMAND_NAME } from '../../constants.js';
+import { useConfig } from '../../contexts/ConfigContext.js';
 
 interface ToolGroupMessageProps {
   groupId: number;
   toolCalls: IndividualToolCallDisplay[];
   availableTerminalHeight?: number;
   terminalWidth: number;
-  config?: Config;
   isFocused?: boolean;
 }
 
@@ -27,9 +26,9 @@ export const ToolGroupMessage: React.FC<ToolGroupMessageProps> = ({
   toolCalls,
   availableTerminalHeight,
   terminalWidth,
-  config,
   isFocused = true,
 }) => {
+  const config = useConfig();
   const hasPending = !toolCalls.every(
     (t) => t.status === ToolCallStatus.Success,
   );

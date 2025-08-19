@@ -20,19 +20,15 @@ import { AuthInProgress } from './AuthInProgress.js';
 import { AuthDialog } from './AuthDialog.js';
 import { EditorSettingsDialog } from './EditorSettingsDialog.js';
 import { PrivacyNotice } from '../privacy/PrivacyNotice.js';
-import { LoadedSettings } from '../../config/settings.js';
-import {
-  Config,
-} from '@google/gemini-cli-core';
 import { Colors } from '../colors.js';
 import { useUIState } from '../contexts/UIStateContext.js';
 import { useUIActions } from '../contexts/UIActionsContext.js';
+import { useConfig } from '../contexts/ConfigContext.js';
+import { useSettings } from '../contexts/SettingsContext.js';
 import process from 'node:process';
 
 // Props for DialogManager
 interface DialogManagerProps {
-  config: Config;
-  settings: LoadedSettings;
   constrainHeight: boolean;
   terminalHeight: number;
   staticExtraHeight: number;
@@ -41,13 +37,13 @@ interface DialogManagerProps {
 
 export const DialogManager = (props: DialogManagerProps) => {
   const {
-    config,
-    settings,
     constrainHeight,
     terminalHeight,
     staticExtraHeight,
     mainAreaWidth,
   } = props;
+  const config = useConfig();
+  const settings = useSettings();
 
   const uiState = useUIState();
   const uiActions = useUIActions();

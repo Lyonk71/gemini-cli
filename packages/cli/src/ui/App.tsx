@@ -26,16 +26,18 @@ import { DialogManager } from './components/DialogManager.js';
 import { InputArea } from './components/InputArea.js';
 import { useUIState } from './contexts/UIStateContext.js';
 import { useUIActions } from './contexts/UIActionsContext.js';
+import { useConfig } from './contexts/ConfigContext.js';
+import { useSettings } from './contexts/SettingsContext.js';
 
 interface AppProps {
-  config: Config;
-  settings: LoadedSettings;
   startupWarnings?: string[];
   version: string;
 }
 
 export const App = (props: AppProps) => {
-  const { config, settings, startupWarnings = [], version } = props;
+  const { startupWarnings = [], version } = props;
+  const config = useConfig();
+  const settings = useSettings();
   const uiState = useUIState();
   const uiActions = useUIActions();
 
@@ -116,6 +118,14 @@ export const App = (props: AppProps) => {
     }
   }, [uiState.streamingState, uiActions, staticNeedsRefresh]);
 
+  const errorCount = useMemo(
+    () =>
+      uiState.filteredConsoleMessages
+        .filter((msg) => msg.type === 'error')
+        .reduce((total, msg) => total + msg.count, 0),
+    [uiState.filteredConsoleMessages],
+  );
+
   if (uiState.quittingMessages) {
     return (
       <Box flexDirection="column" marginBottom={1}>
@@ -128,7 +138,6 @@ export const App = (props: AppProps) => {
             terminalWidth={terminalWidth}
             item={item}
             isPending={false}
-            config={config}
           />
         ))}
       </Box>
@@ -141,13 +150,6 @@ export const App = (props: AppProps) => {
     ...uiState.pendingSlashCommandHistoryItems,
     ...uiState.pendingGeminiHistoryItems,
   ];
-  const errorCount = useMemo(
-    () =>
-      uiState.filteredConsoleMessages
-        .filter((msg) => msg.type === 'error')
-        .reduce((total, msg) => total + msg.count, 0),
-    [uiState.filteredConsoleMessages],
-  );
 
   const dialogsVisible =
     uiState.shouldShowIdePrompt ||
@@ -167,15 +169,12 @@ export const App = (props: AppProps) => {
         <AppHeader
           version={version}
           nightly={nightly}
-          settings={settings}
-          config={config}
         />
         <MainContent
           pendingHistoryItems={pendingHistoryItems}
           mainAreaWidth={mainAreaWidth}
           staticAreaMaxItemHeight={Math.max(terminalHeight * 4, 100)}
           availableTerminalHeight={availableTerminalHeight}
-          config={config}
           pendingHistoryItemRef={pendingHistoryItemRef}
         />
 
@@ -184,8 +183,6 @@ export const App = (props: AppProps) => {
 
           {dialogsVisible ? (
             <DialogManager
-              config={config}
-              settings={settings}
               constrainHeight={uiState.constrainHeight}
               terminalHeight={terminalHeight}
               staticExtraHeight={staticExtraHeight}
@@ -193,7 +190,6 @@ export const App = (props: AppProps) => {
             />
           ) : (
             <InputArea
-              config={config}
               contextFileNames={contextFileNames}
               showAutoAcceptIndicator={showAutoAcceptIndicator}
               footerProps={{
