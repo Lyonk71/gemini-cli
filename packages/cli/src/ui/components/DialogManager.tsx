@@ -8,11 +8,9 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import {
   IdeIntegrationNudge,
-  IdeIntegrationNudgeResult,
 } from '../IdeIntegrationNudge.js';
 import {
   FolderTrustDialog,
-  FolderTrustChoice,
 } from './FolderTrustDialog.js';
 import { ShellConfirmationDialog } from './ShellConfirmationDialog.js';
 import { RadioButtonSelect } from './shared/RadioButtonSelect.js';
@@ -22,52 +20,19 @@ import { AuthInProgress } from './AuthInProgress.js';
 import { AuthDialog } from './AuthDialog.js';
 import { EditorSettingsDialog } from './EditorSettingsDialog.js';
 import { PrivacyNotice } from '../privacy/PrivacyNotice.js';
-import { LoadedSettings, SettingScope } from '../../config/settings.js';
+import { LoadedSettings } from '../../config/settings.js';
 import {
-  AuthType,
   Config,
-  EditorType,
-  ToolConfirmationOutcome,
 } from '@google/gemini-cli-core';
 import { Colors } from '../colors.js';
-import { useUI } from '../hooks/useUI.js';
-import { ShellConfirmationRequest, ConfirmationRequest } from '../types.js';
+import { useUIState } from '../contexts/UIStateContext.js';
+import { useUIActions } from '../contexts/UIActionsContext.js';
 import process from 'node:process';
 
 // Props for DialogManager
 interface DialogManagerProps {
   config: Config;
   settings: LoadedSettings;
-  shouldShowIdePrompt: boolean;
-  handleIdePromptComplete: (result: IdeIntegrationNudgeResult) => void;
-  isFolderTrustDialogOpen: boolean;
-  handleFolderTrustSelect: (choice: FolderTrustChoice) => void;
-  shellConfirmationRequest: ShellConfirmationRequest | null;
-  confirmationRequest: ConfirmationRequest | null;
-  isThemeDialogOpen: boolean;
-  themeError: string | null;
-  handleThemeSelect: (
-    themeName: string | undefined,
-    scope: SettingScope,
-  ) => void;
-  handleThemeHighlight: (themeName: string | undefined) => void;
-  isSettingsDialogOpen: boolean;
-  closeSettingsDialog: () => void;
-  isAuthenticating: boolean;
-  isAuthDialogOpen: boolean;
-  authError: string | null;
-  handleAuthSelect: (
-    authType: AuthType | undefined,
-    scope: SettingScope,
-  ) => void;
-  isEditorDialogOpen: boolean;
-  editorError: string | null;
-  handleEditorSelect: (
-    editorType: EditorType | undefined,
-    scope: SettingScope,
-  ) => void;
-  exitEditorDialog: () => void;
-  showPrivacyNotice: boolean;
   constrainHeight: boolean;
   terminalHeight: number;
   staticExtraHeight: number;
@@ -78,53 +43,33 @@ export const DialogManager = (props: DialogManagerProps) => {
   const {
     config,
     settings,
-    shouldShowIdePrompt,
-    handleIdePromptComplete,
-    isFolderTrustDialogOpen,
-    handleFolderTrustSelect,
-    shellConfirmationRequest,
-    confirmationRequest,
-    isThemeDialogOpen,
-    themeError,
-    handleThemeSelect,
-    handleThemeHighlight,
-    isSettingsDialogOpen,
-    closeSettingsDialog,
-    isAuthenticating,
-    isAuthDialogOpen,
-    authError,
-    handleAuthSelect,
-    isEditorDialogOpen,
-    editorError,
-    handleEditorSelect,
-    exitEditorDialog,
-    showPrivacyNotice,
     constrainHeight,
     terminalHeight,
     staticExtraHeight,
     mainAreaWidth,
   } = props;
 
-  const ui = useUI();
+  const uiState = useUIState();
+  const uiActions = useUIActions();
 
-  if (shouldShowIdePrompt) {
+  if (uiState.shouldShowIdePrompt) {
     return (
       <IdeIntegrationNudge
         ideName={config.getIdeClient().getDetectedIdeDisplayName()}
-        onComplete={handleIdePromptComplete}
+        onComplete={uiActions.handleIdePromptComplete}
       />
     );
   }
-  if (isFolderTrustDialogOpen) {
-    return <FolderTrustDialog onSelect={handleFolderTrustSelect} />;
+  if (uiState.isFolderTrustDialogOpen) {
+    return <FolderTrustDialog onSelect={uiActions.handleFolderTrustSelect} />;
   }
-  if (shellConfirmationRequest) {
-    return <ShellConfirmationDialog request={shellConfirmationRequest} />;
+  if (uiState.shellConfirmationRequest) {
+    return <ShellConfirmationDialog request={uiState.shellConfirmationRequest} />;
   }
-  if (confirmationRequest) {
+  if (uiState.confirmationRequest) {
     return (
       <Box flexDirection="column">
-        {confirmationRequest.prompt}
+        {uiState.confirmationRequest.prompt}
         <Box paddingY={1}>
           <RadioButtonSelect
             items={[
@@ -132,24 +77,24 @@ export const DialogManager = (props: DialogManagerProps) => {
               { label: 'No', value: false },
             ]}
             onSelect={(value: boolean) => {
-              confirmationRequest.onConfirm(value);
+              uiState.confirmationRequest!.onConfirm(value);
             }}
           />
         </Box>
       </Box>
     );
   }
-  if (isThemeDialogOpen) {
+  if (uiState.isThemeDialogOpen) {
     return (
       <Box flexDirection="column">
-        {themeError && (
+        {uiState.themeError && (
           <Box marginBottom={1}>
-            <Text color={Colors.AccentRed}>{themeError}</Text>
+            <Text color={Colors.AccentRed}>{uiState.themeError}</Text>
           </Box>
         )}
         <ThemeDialog
-          onSelect={handleThemeSelect}
-          onHighlight={handleThemeHighlight}
+          onSelect={uiActions.handleThemeSelect}
+          onHighlight={uiActions.handleThemeHighlight}
           settings={settings}
           availableTerminalHeight={
             constrainHeight ? terminalHeight - staticExtraHeight : undefined
@@ -159,18 +104,18 @@ export const DialogManager = (props: DialogManagerProps) => {
       </Box>
     );
   }
-  if (isSettingsDialogOpen) {
+  if (uiState.isSettingsDialogOpen) {
     return (
       <Box flexDirection="column">
         <SettingsDialog
           settings={settings}
-          onSelect={() => closeSettingsDialog()}
+          onSelect={() => uiActions.closeSettingsDialog()}
           onRestartRequest={() => process.exit(0)}
         />
       </Box>
     );
   }
-  if (isAuthenticating) {
+  if (uiState.isAuthenticating) {
     return (
       <AuthInProgress
         onTimeout={() => {
@@ -179,36 +124,36 @@ export const DialogManager = (props: DialogManagerProps) => {
       />
     );
   }
-  if (isAuthDialogOpen) {
+  if (uiState.isAuthDialogOpen) {
     return (
       <Box flexDirection="column">
         <AuthDialog
-          onSelect={handleAuthSelect}
+          onSelect={uiActions.handleAuthSelect}
           settings={settings}
-          initialErrorMessage={authError}
+          initialErrorMessage={uiState.authError}
         />
       </Box>
     );
   }
-  if (isEditorDialogOpen) {
+  if (uiState.isEditorDialogOpen) {
     return (
       <Box flexDirection="column">
-        {editorError && (
+        {uiState.editorError && (
           <Box marginBottom={1}>
-            <Text color={Colors.AccentRed}>{editorError}</Text>
+            <Text color={Colors.AccentRed}>{uiState.editorError}</Text>
           </Box>
         )}
         <EditorSettingsDialog
-          onSelect={handleEditorSelect}
+          onSelect={uiActions.handleEditorSelect}
           settings={settings}
-          onExit={exitEditorDialog}
+          onExit={uiActions.exitEditorDialog}
         />
       </Box>
     );
   }
-  if (showPrivacyNotice) {
+  if (uiState.showPrivacyNotice) {
     return (
-      <PrivacyNotice onExit={() => ui.openPrivacyNotice()} config={config} />
+      <PrivacyNotice onExit={() => uiActions.exitPrivacyNotice()} config={config} />
     );
   }
 

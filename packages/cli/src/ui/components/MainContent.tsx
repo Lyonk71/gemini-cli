@@ -9,41 +9,35 @@ import { Box, DOMElement, Static } from 'ink';
 import { HistoryItemDisplay } from './HistoryItemDisplay.js';
 import { ShowMoreLines } from './ShowMoreLines.js';
 import { OverflowProvider } from '../contexts/OverflowContext.js';
-import { HistoryItem, HistoryItemWithoutId } from '../types.js';
+import { HistoryItemWithoutId } from '../types.js';
 import { Config } from '@google/gemini-cli-core';
-import { type SlashCommand } from '../commands/types.js';
+import { useUIState } from '../contexts/UIStateContext.js';
 
 interface MainContentProps {
-  history: HistoryItem[];
   pendingHistoryItems: HistoryItemWithoutId[];
   mainAreaWidth: number;
   staticAreaMaxItemHeight: number;
-  constrainHeight: boolean;
   availableTerminalHeight: number | undefined;
   config: Config;
-  slashCommands: readonly SlashCommand[];
-  isEditorDialogOpen: boolean;
   pendingHistoryItemRef: React.RefObject<DOMElement | null>;
 }
 
 export const MainContent = (props: MainContentProps) => {
   const {
-    history,
     pendingHistoryItems,
     mainAreaWidth,
     staticAreaMaxItemHeight,
-    constrainHeight,
     availableTerminalHeight,
     config,
-    slashCommands,
-    isEditorDialogOpen,
     pendingHistoryItemRef,
   } = props;
+
+  const uiState = useUIState();
 
   return (
     <>
       <Static
-        items={history.map((h) => (
+        items={uiState.history.map((h) => (
           <HistoryItemDisplay
             terminalWidth={mainAreaWidth}
             availableTerminalHeight={staticAreaMaxItemHeight}
@@ -51,7 +45,7 @@ export const MainContent = (props: MainContentProps) => {
             item={h}
             isPending={false}
             config={config}
-            commands={slashCommands}
+            commands={uiState.slashCommands}
           />
         ))}
       >
@@ -63,16 +57,16 @@ export const MainContent = (props: MainContentProps) => {
             <HistoryItemDisplay
               key={i}
               availableTerminalHeight={
-                constrainHeight ? availableTerminalHeight : undefined
+                uiState.constrainHeight ? availableTerminalHeight : undefined
               }
               terminalWidth={mainAreaWidth}
               item={{ ...item, id: 0 }}
               isPending={true}
               config={config}
-              isFocused={!isEditorDialogOpen}
+              isFocused={!uiState.isEditorDialogOpen}
             />
           ))}
-          <ShowMoreLines constrainHeight={constrainHeight} />
+          <ShowMoreLines constrainHeight={uiState.constrainHeight} />
         </Box>
       </OverflowProvider>
     </>

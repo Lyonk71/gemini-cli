@@ -6,7 +6,16 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { App } from './App.js';
-import { UIContext } from './hooks/useUI.js';
+import {
+  UIStateContext,
+  useUIState,
+  UIState,
+} from './contexts/UIStateContext.js';
+import {
+  UIActionsContext,
+  useUIActions,
+  UIActions,
+} from './contexts/UIActionsContext.js';
 import { HistoryItem, StreamingState } from './types.js';
 import {
   EditorType,
@@ -284,49 +293,6 @@ export const AppContainer = (props: AppContainerProps) => {
   const isInputActive =
     streamingState === StreamingState.Idle && !initError && !isProcessing;
 
-  const uiContextValue = useMemo(
-    () => ({
-      openHelp: () => {
-        // This will be wired up to the slash command processor later
-      },
-      openAuthDialog,
-      openThemeDialog,
-      openEditorDialog,
-      openSettingsDialog,
-      openPrivacyNotice: () => setShowPrivacyNotice(true),
-      toggleCorgiMode: () => setCorgiMode((prev) => !prev),
-      setDebugMessage,
-      quit: (messages: HistoryItem[]) => {
-        setQuittingMessages(messages);
-        setTimeout(() => {
-          process.exit(0);
-        }, 100);
-      },
-      consoleMessages,
-      handleNewMessage,
-      clearConsoleMessages: clearConsoleMessagesState,
-      handleSlashCommand,
-      handleFinalSubmit,
-      handleClearScreen,
-    }),
-    [
-      openAuthDialog,
-      openThemeDialog,
-      openEditorDialog,
-      openSettingsDialog,
-      setQuittingMessages,
-      setDebugMessage,
-      setShowPrivacyNotice,
-      setCorgiMode,
-      consoleMessages,
-      handleNewMessage,
-      clearConsoleMessagesState,
-      handleSlashCommand,
-      handleFinalSubmit,
-      handleClearScreen,
-    ],
-  );
-
   // New state and logic moved from App.tsx
   const isFocused = useFocus();
   useBracketedPaste();
@@ -511,69 +477,145 @@ export const AppContainer = (props: AppContainerProps) => {
     return consoleMessages.filter((msg) => msg.type !== 'debug');
   }, [consoleMessages, config]);
 
+  const uiState: UIState = useMemo(
+    () => ({
+      history: historyManager.history,
+      isThemeDialogOpen,
+      themeError,
+      isAuthenticating,
+      authError,
+      isAuthDialogOpen,
+      editorError,
+      isEditorDialogOpen,
+      showPrivacyNotice,
+      corgiMode,
+      debugMessage,
+      quittingMessages,
+      isSettingsDialogOpen,
+      slashCommands,
+      pendingSlashCommandHistoryItems,
+      commandContext,
+      shellConfirmationRequest,
+      confirmationRequest,
+      geminiMdFileCount,
+      streamingState,
+      initError,
+      pendingGeminiHistoryItems,
+      thought,
+      shellModeActive,
+      userMessages,
+      buffer,
+      inputWidth,
+      suggestionsWidth,
+      isInputActive,
+      shouldShowIdePrompt,
+      isFolderTrustDialogOpen: isFolderTrustDialogOpen ?? false,
+      constrainHeight,
+      showErrorDetails,
+      filteredConsoleMessages,
+      ideContextState,
+      showToolDescriptions,
+      ctrlCPressedOnce,
+      ctrlDPressedOnce,
+      showEscapePrompt,
+      isFocused,
+      elapsedTime: elapsedTime.toString(),
+      currentLoadingPhrase,
+    }),
+    [
+      historyManager.history,
+      isThemeDialogOpen,
+      themeError,
+      isAuthenticating,
+      authError,
+      isAuthDialogOpen,
+      editorError,
+      isEditorDialogOpen,
+      showPrivacyNotice,
+      corgiMode,
+      debugMessage,
+      quittingMessages,
+      isSettingsDialogOpen,
+      slashCommands,
+      pendingSlashCommandHistoryItems,
+      commandContext,
+      shellConfirmationRequest,
+      confirmationRequest,
+      geminiMdFileCount,
+      streamingState,
+      initError,
+      pendingGeminiHistoryItems,
+      thought,
+      shellModeActive,
+      userMessages,
+      buffer,
+      inputWidth,
+      suggestionsWidth,
+      isInputActive,
+      shouldShowIdePrompt,
+      isFolderTrustDialogOpen,
+      constrainHeight,
+      showErrorDetails,
+      filteredConsoleMessages,
+      ideContextState,
+      showToolDescriptions,
+      ctrlCPressedOnce,
+      ctrlDPressedOnce,
+      showEscapePrompt,
+      isFocused,
+      elapsedTime,
+      currentLoadingPhrase,
+    ],
+  );
+
+  const uiActions: UIActions = useMemo(
+    () => ({
+      handleThemeSelect,
+      handleThemeHighlight,
+      handleAuthSelect,
+      handleEditorSelect,
+      exitEditorDialog,
+      exitPrivacyNotice: () => setShowPrivacyNotice(false),
+      closeSettingsDialog,
+      setShellModeActive,
+      vimHandleInput,
+      handleIdePromptComplete,
+      handleFolderTrustSelect,
+      setConstrainHeight,
+      onEscapePromptChange: handleEscapePromptChange,
+      refreshStatic,
+      handleFinalSubmit,
+      handleClearScreen,
+    }),
+    [
+      handleThemeSelect,
+      handleThemeHighlight,
+      handleAuthSelect,
+      handleEditorSelect,
+      exitEditorDialog,
+      closeSettingsDialog,
+      setShellModeActive,
+      vimHandleInput,
+      handleIdePromptComplete,
+      handleFolderTrustSelect,
+      setConstrainHeight,
+      handleEscapePromptChange,
+      refreshStatic,
+      handleFinalSubmit,
+      handleClearScreen,
+    ],
+  );
+
   return (
-    <UIContext.Provider value={uiContextValue}>
-            <App
-        config={config}
-        settings={settings}
-        startupWarnings={props.startupWarnings}
-        version={props.version}
-        history={historyManager.history}
-        isThemeDialogOpen={isThemeDialogOpen}
-        themeError={themeError}
-        handleThemeSelect={handleThemeSelect}
-        handleThemeHighlight={handleThemeHighlight}
-        isAuthenticating={isAuthenticating}
-        authError={authError}
-        isAuthDialogOpen={isAuthDialogOpen}
-        handleAuthSelect={handleAuthSelect}
-        editorError={editorError}
-        isEditorDialogOpen={isEditorDialogOpen}
-        handleEditorSelect={handleEditorSelect}
-        exitEditorDialog={exitEditorDialog}
-        showPrivacyNotice={showPrivacyNotice}
-        corgiMode={corgiMode}
-        debugMessage={debugMessage}
-        quittingMessages={quittingMessages}
-        isSettingsDialogOpen={isSettingsDialogOpen}
-        closeSettingsDialog={closeSettingsDialog}
-        slashCommands={slashCommands}
-        pendingSlashCommandHistoryItems={pendingSlashCommandHistoryItems}
-        commandContext={commandContext}
-        shellConfirmationRequest={shellConfirmationRequest}
-        confirmationRequest={confirmationRequest}
-        geminiMdFileCount={geminiMdFileCount}
-        streamingState={streamingState}
-        initError={initError}
-        pendingGeminiHistoryItems={pendingGeminiHistoryItems}
-        thought={thought}
-        shellModeActive={shellModeActive}
-        setShellModeActive={setShellModeActive}
-        userMessages={userMessages}
-        buffer={buffer}
-        inputWidth={inputWidth}
-        suggestionsWidth={suggestionsWidth}
-        vimHandleInput={vimHandleInput}
-        isInputActive={isInputActive}
-        shouldShowIdePrompt={shouldShowIdePrompt}
-        handleIdePromptComplete={handleIdePromptComplete}
-        isFolderTrustDialogOpen={isFolderTrustDialogOpen ?? false}
-        handleFolderTrustSelect={handleFolderTrustSelect}
-        constrainHeight={constrainHeight}
-        setConstrainHeight={setConstrainHeight}
-        showErrorDetails={showErrorDetails}
-        filteredConsoleMessages={filteredConsoleMessages}
-        ideContextState={ideContextState}
-        showToolDescriptions={showToolDescriptions}
-        ctrlCPressedOnce={ctrlCPressedOnce}
-        ctrlDPressedOnce={ctrlDPressedOnce}
-        showEscapePrompt={showEscapePrompt}
-        onEscapePromptChange={handleEscapePromptChange}
-        isFocused={isFocused}
-        elapsedTime={elapsedTime.toString()}
-        currentLoadingPhrase={currentLoadingPhrase}
-        refreshStatic={refreshStatic}
-      />
-    </UIContext.Provider>
+    <UIStateContext.Provider value={uiState}>
+      <UIActionsContext.Provider value={uiActions}>
+        <App
+          config={config}
+          settings={settings}
+          startupWarnings={props.startupWarnings}
+          version={props.version}
+        />
+      </UIActionsContext.Provider>
+    </UIStateContext.Provider>
   );
 };

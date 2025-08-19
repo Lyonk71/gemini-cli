@@ -17,109 +17,45 @@ import { ShowMoreLines } from './ShowMoreLines.js';
 import { OverflowProvider } from '../contexts/OverflowContext.js';
 import { Colors } from '../colors.js';
 import { isNarrowWidth } from '../utils/isNarrowWidth.js';
-import { useUI } from '../hooks/useUI.js';
+import { useUIState } from '../contexts/UIStateContext.js';
+import { useUIActions } from '../contexts/UIActionsContext.js';
 import { useVimMode } from '../contexts/VimModeContext.js';
-import { Config, ApprovalMode, IdeContext } from '@google/gemini-cli-core';
-import {
-  StreamingState,
-  ThoughtSummary,
-  ConsoleMessageItem,
-} from '../types.js';
-import { TextBuffer } from './shared/text-buffer.js';
-import { type CommandContext, type SlashCommand } from '../commands/types.js';
-import { Key } from '../hooks/useKeypress.js';
+import { Config, ApprovalMode } from '@google/gemini-cli-core';
+import { StreamingState } from '../types.js';
 
 interface InputAreaProps {
   config: Config;
-  streamingState: StreamingState;
-  thought: ThoughtSummary | null;
-  currentLoadingPhrase: string;
-  elapsedTime: string;
-  ctrlCPressedOnce: boolean;
-  ctrlDPressedOnce: boolean;
-  showEscapePrompt: boolean;
-  ideContextState: IdeContext | undefined;
-  geminiMdFileCount: number;
   contextFileNames: string[];
-  showToolDescriptions: boolean;
   showAutoAcceptIndicator: ApprovalMode;
-  shellModeActive: boolean;
-  setShellModeActive: (value: boolean) => void;
-  showErrorDetails: boolean;
-  filteredConsoleMessages: ConsoleMessageItem[];
-  constrainHeight: boolean;
-  debugConsoleMaxHeight: number;
-  inputWidth: number;
-  isInputActive: boolean;
-  buffer: TextBuffer;
-  suggestionsWidth: number;
-  userMessages: string[];
-  slashCommands: readonly SlashCommand[];
-  commandContext: CommandContext;
-  onEscapePromptChange: (show: boolean) => void;
-  isFocused: boolean;
-  vimHandleInput: (key: Key) => boolean;
-  placeholder: string;
-  initError: string | null;
   footerProps: Omit<FooterProps, 'vimMode'>;
 }
 
 export const InputArea = (props: InputAreaProps) => {
-  const {
-    config,
-    streamingState,
-    thought,
-    currentLoadingPhrase,
-    elapsedTime,
-    ctrlCPressedOnce,
-    ctrlDPressedOnce,
-    showEscapePrompt,
-    ideContextState,
-    geminiMdFileCount,
-    contextFileNames,
-    showToolDescriptions,
-    showAutoAcceptIndicator,
-    shellModeActive,
-    setShellModeActive,
-    showErrorDetails,
-    filteredConsoleMessages,
-    constrainHeight,
-    debugConsoleMaxHeight,
-    inputWidth,
-    isInputActive,
-    buffer,
-    suggestionsWidth,
-    userMessages,
-    slashCommands,
-    commandContext,
-    onEscapePromptChange,
-    isFocused,
-    vimHandleInput,
-    placeholder,
-    initError,
-    footerProps,
-  } = props;
+  const { config, contextFileNames, showAutoAcceptIndicator, footerProps } =
+    props;
 
-  const ui = useUI();
+  const uiState = useUIState();
+  const uiActions = useUIActions();
   const { vimEnabled, vimMode } = useVimMode();
   const terminalWidth = process.stdout.columns;
   const isNarrow = isNarrowWidth(terminalWidth);
+  const debugConsoleMaxHeight = Math.floor(Math.max(terminalWidth * 0.2, 5));
 
   return (
     <Box flexDirection="column">
       <LoadingIndicator
         thought={
-          streamingState === StreamingState.WaitingForConfirmation ||
+          uiState.streamingState === StreamingState.WaitingForConfirmation ||
           config.getAccessibility()?.disableLoadingPhrases
             ? undefined
-            : thought
+            : uiState.thought
         }
         currentLoadingPhrase={
           config.getAccessibility()?.disableLoadingPhrases
             ? undefined
-            : currentLoadingPhrase
+            : uiState.currentLoadingPhrase
         }
-        elapsedTime={parseInt(elapsedTime, 10)}
+        elapsedTime={parseInt(uiState.elapsedTime, 10)}
       />
 
       <Box
@@ -133,85 +69,90 @@ export const InputArea = (props: InputAreaProps) => {
           {process.env.GEMINI_SYSTEM_MD && (
             <Text color={Colors.AccentRed}>|⌐■_■| </Text>
           )}
-          {ctrlCPressedOnce ? (
+          {uiState.ctrlCPressedOnce ? (
             <Text color={Colors.AccentYellow}>
               Press Ctrl+C again to exit.
             </Text>
-          ) : ctrlDPressedOnce ? (
+          ) : uiState.ctrlDPressedOnce ? (
             <Text color={Colors.AccentYellow}>
               Press Ctrl+D again to exit.
             </Text>
-          ) : showEscapePrompt ? (
+          ) : uiState.showEscapePrompt ? (
             <Text color={Colors.Gray}>Press Esc again to clear.</Text>
           ) : (
             <ContextSummaryDisplay
-              ideContext={ideContextState}
-              geminiMdFileCount={geminiMdFileCount}
+              ideContext={uiState.ideContextState}
+              geminiMdFileCount={uiState.geminiMdFileCount}
               contextFileNames={contextFileNames}
               mcpServers={config.getMcpServers()}
               blockedMcpServers={config.getBlockedMcpServers()}
-              showToolDescriptions={showToolDescriptions}
+              showToolDescriptions={uiState.showToolDescriptions}
             />
           )}
         </Box>
         <Box paddingTop={isNarrow ? 1 : 0}>
           {showAutoAcceptIndicator !== ApprovalMode.DEFAULT &&
-            !shellModeActive && (
+            !uiState.shellModeActive && (
               <AutoAcceptIndicator
                 approvalMode={showAutoAcceptIndicator}
               />
             )}
-          {shellModeActive && <ShellModeIndicator />}
+          {uiState.shellModeActive && <ShellModeIndicator />}
         </Box>
       </Box>
 
-      {showErrorDetails && (
+      {uiState.showErrorDetails && (
         <OverflowProvider>
           <Box flexDirection="column">
             <DetailedMessagesDisplay
-              messages={filteredConsoleMessages}
+              messages={uiState.filteredConsoleMessages}
               maxHeight={
-                constrainHeight ? debugConsoleMaxHeight : undefined
+                uiState.constrainHeight ? debugConsoleMaxHeight : undefined
               }
-              width={inputWidth}
+              width={uiState.inputWidth}
             />
-            <ShowMoreLines constrainHeight={constrainHeight} />
+            <ShowMoreLines constrainHeight={uiState.constrainHeight} />
           </Box>
         </OverflowProvider>
       )}
 
-      {isInputActive && (
+      {uiState.isInputActive && (
         <InputPrompt
-          buffer={buffer}
-          inputWidth={inputWidth}
-          suggestionsWidth={suggestionsWidth}
-          onSubmit={ui.handleFinalSubmit}
-          userMessages={userMessages}
-          onClearScreen={ui.handleClearScreen}
+          buffer={uiState.buffer}
+          inputWidth={uiState.inputWidth}
+          suggestionsWidth={uiState.suggestionsWidth}
+          onSubmit={uiActions.handleFinalSubmit}
+          userMessages={uiState.userMessages}
+          onClearScreen={uiActions.handleClearScreen}
           config={config}
-          slashCommands={slashCommands}
-          commandContext={commandContext}
-          shellModeActive={shellModeActive}
-          setShellModeActive={setShellModeActive}
-          onEscapePromptChange={onEscapePromptChange}
-          focus={isFocused}
-          vimHandleInput={vimHandleInput}
-          placeholder={placeholder}
+          slashCommands={uiState.slashCommands}
+          commandContext={uiState.commandContext}
+          shellModeActive={uiState.shellModeActive}
+          setShellModeActive={uiActions.setShellModeActive}
+          onEscapePromptChange={uiActions.onEscapePromptChange}
+          focus={uiState.isFocused}
+          vimHandleInput={uiActions.vimHandleInput}
+          placeholder={
+            vimEnabled
+              ? "  Press 'i' for INSERT mode and 'Esc' for NORMAL mode."
+              : '  Type your message or @path/to/file'
+          }
         />
       )}
 
-      {initError && streamingState !== StreamingState.Responding && (
-        <Box
-          borderStyle="round"
-          borderColor={Colors.AccentRed}
-          paddingX={1}
-          marginBottom={1}
-        >
-          <Text color={Colors.AccentRed}>
-            Initialization Error: {initError}
-          </Text>
-        </Box>
-      )}
+      {uiState.initError &&
+        uiState.streamingState !== StreamingState.Responding && (
+          <Box
+            borderStyle="round"
+            borderColor={Colors.AccentRed}
+            paddingX={1}
+            marginBottom={1}
+          >
+            <Text color={Colors.AccentRed}>
+              Initialization Error: {uiState.initError}
+            </Text>
+          </Box>
+        )}
       <Footer {...footerProps} vimMode={vimEnabled ? vimMode : undefined} />
     </Box>
   );
