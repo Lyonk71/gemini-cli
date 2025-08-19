@@ -8,15 +8,16 @@ import React from 'react';
 import { Box } from 'ink';
 import { Header } from './Header.js';
 import { Tips } from './Tips.js';
+import { useAppContext } from '../contexts/AppContext.js';
 import { useSettings } from '../contexts/SettingsContext.js';
 import { useConfig } from '../contexts/ConfigContext.js';
 
 interface AppHeaderProps {
-  version: string;
   nightly: boolean;
 }
 
-export const AppHeader = ({ version, nightly }: AppHeaderProps) => {
+export const AppHeader = ({ nightly }: AppHeaderProps) => {
+  const { version } = useAppContext();
   const settings = useSettings();
   const config = useConfig();
   return (

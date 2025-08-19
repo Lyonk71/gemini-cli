@@ -6,13 +6,13 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
+import { useAppContext } from '../contexts/AppContext.js';
 import { Colors } from '../colors.js';
 
-interface NotificationsProps {
-  startupWarnings: string[];
-}
+interface NotificationsProps {}
 
-export const Notifications = ({ startupWarnings }: NotificationsProps) => {
+export const Notifications = (props: NotificationsProps) => {
+  const { startupWarnings } = useAppContext();
   if (startupWarnings.length === 0) {
     return null;
   }

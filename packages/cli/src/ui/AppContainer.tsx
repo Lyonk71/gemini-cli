@@ -6,6 +6,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { App } from './App.js';
+import { AppContext } from './contexts/AppContext.js';
 import {
   UIStateContext,
   useUIState,
@@ -612,10 +613,14 @@ export const AppContainer = (props: AppContainerProps) => {
       <UIActionsContext.Provider value={uiActions}>
         <ConfigContext.Provider value={config}>
           <SettingsContext.Provider value={settings}>
-            <App
-              startupWarnings={props.startupWarnings}
-              version={props.version}
-            />
+            <AppContext.Provider
+              value={{
+                version: props.version,
+                startupWarnings: props.startupWarnings || [],
+              }}
+            >
+              <App />
+            </AppContext.Provider>
           </SettingsContext.Provider>
         </ConfigContext.Provider>
       </UIActionsContext.Provider>

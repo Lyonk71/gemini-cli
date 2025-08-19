@@ -18,6 +18,7 @@ import {
 import { StreamingContext } from './contexts/StreamingContext.js';
 import { useSessionStats } from './contexts/SessionContext.js';
 import { useGitBranchName } from './hooks/useGitBranchName.js';
+import { useAppContext } from './contexts/AppContext.js';
 import { useVimMode } from './contexts/VimModeContext.js';
 import { AppHeader } from './components/AppHeader.js';
 import { Notifications } from './components/Notifications.js';
@@ -29,13 +30,10 @@ import { useUIActions } from './contexts/UIActionsContext.js';
 import { useConfig } from './contexts/ConfigContext.js';
 import { useSettings } from './contexts/SettingsContext.js';
 
-interface AppProps {
-  startupWarnings?: string[];
-  version: string;
-}
+interface AppProps {}
 
 export const App = (props: AppProps) => {
-  const { startupWarnings = [], version } = props;
+  const { version } = useAppContext();
   const config = useConfig();
   const settings = useSettings();
   const uiState = useUIState();
@@ -166,10 +164,7 @@ export const App = (props: AppProps) => {
   return (
     <StreamingContext.Provider value={uiState.streamingState}>
       <Box flexDirection="column" width="90%">
-        <AppHeader
-          version={version}
-          nightly={nightly}
-        />
+        <AppHeader nightly={nightly} />
         <MainContent
           pendingHistoryItems={pendingHistoryItems}
           mainAreaWidth={mainAreaWidth}
@@ -178,8 +173,8 @@ export const App = (props: AppProps) => {
           pendingHistoryItemRef={pendingHistoryItemRef}
         />
 
-        <Box flexDirection="column" ref={mainControlsRef}>
-          <Notifications startupWarnings={startupWarnings} />
+                <Box flexDirection="column" ref={mainControlsRef}>
+          <Notifications />
 
           {dialogsVisible ? (
             <DialogManager
