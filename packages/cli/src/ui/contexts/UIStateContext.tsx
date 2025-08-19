@@ -61,6 +61,7 @@ export interface UIState {
   isFocused: boolean;
   elapsedTime: string;
   currentLoadingPhrase: string;
+  historyRemountKey: number;
 }
 
 export const UIStateContext = createContext<UIState | null>(null);

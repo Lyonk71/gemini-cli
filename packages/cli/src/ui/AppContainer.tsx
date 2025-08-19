@@ -19,12 +19,15 @@ import {
 import { ConfigContext } from './contexts/ConfigContext.js';
 import { SettingsContext } from './contexts/SettingsContext.js';
 import { HistoryItem, StreamingState } from './types.js';
+import { MessageType } from './types.js';
 import {
   EditorType,
   Config,
   ideContext,
   IdeContext,
+  getErrorMessage,
 } from '@google/gemini-cli-core';
+import { loadHierarchicalGeminiMemory } from '../config/config.js';
 import process from 'node:process';
 import { useHistory } from './hooks/useHistoryManager.js';
 import { useThemeCommand } from './hooks/useThemeCommand.js';
@@ -35,7 +38,8 @@ import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useVimMode } from './contexts/VimModeContext.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
-import { useStdin } from 'ink';
+import { useStdin, useStdout } from 'ink';
+import ansiEscapes from 'ansi-escapes';
 import * as fs from 'fs';
 import { useTextBuffer } from './components/shared/text-buffer.js';
 import { useLogger } from './hooks/useLogger.js';
@@ -84,12 +88,14 @@ export const AppContainer = (props: AppContainerProps) => {
   const [shellModeActive, setShellModeActive] = useState(false);
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
+  const [historyRemountKey, setHistoryRemountKey] = useState(0);
 
   const logger = useLogger();
   const [userMessages, setUserMessages] = useState<string[]>([]);
 
   const { columns: terminalWidth } = useTerminalSize();
   const { stdin, setRawMode } = useStdin();
+  const { stdout } = useStdout();
 
   const widthFraction = 0.9;
   const inputWidth = Math.max(
@@ -153,8 +159,9 @@ export const AppContainer = (props: AppContainerProps) => {
   }, [historyManager.history, logger]);
 
   const refreshStatic = useCallback(() => {
-    // This will be implemented in a later phase.
-  }, []);
+    stdout.write(ansiEscapes.clearTerminal);
+    setHistoryRemountKey((prev) => prev + 1);
+  }, [setHistoryRemountKey, stdout]);
 
   const {
     consoleMessages,
@@ -247,6 +254,64 @@ export const AppContainer = (props: AppContainerProps) => {
     slashCommandActions,
   );
 
+  const performMemoryRefresh = useCallback(async () => {
+    historyManager.addItem(
+      {
+        type: MessageType.INFO,
+        text: 'Refreshing hierarchical memory (GEMINI.md or other context files)...',
+      },
+      Date.now(),
+    );
+    try {
+      const { memoryContent, fileCount } = await loadHierarchicalGeminiMemory(
+        process.cwd(),
+        settings.merged.loadMemoryFromIncludeDirectories
+          ? config.getWorkspaceContext().getDirectories()
+          : [],
+        config.getDebugMode(),
+        config.getFileService(),
+        settings.merged,
+        config.getExtensionContextFilePaths(),
+        settings.merged.memoryImportFormat || 'tree', // Use setting or default to 'tree'
+        config.getFileFilteringOptions(),
+      );
+
+      config.setUserMemory(memoryContent);
+      config.setGeminiMdFileCount(fileCount);
+      setGeminiMdFileCount(fileCount);
+
+      historyManager.addItem(
+        {
+          type: MessageType.INFO,
+          text: `Memory refreshed successfully. ${
+            memoryContent.length > 0
+              ? `Loaded ${memoryContent.length} characters from ${fileCount} file(s).`
+              : 'No memory content found.'
+          }`,
+        },
+        Date.now(),
+      );
+      if (config.getDebugMode()) {
+        console.log(
+          `[DEBUG] Refreshed memory content in config: ${memoryContent.substring(
+            0,
+            200,
+          )}...`,
+        );
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      historyManager.addItem(
+        {
+          type: MessageType.ERROR,
+          text: `Error refreshing memory: ${errorMessage}`,
+        },
+        Date.now(),
+      );
+      console.error('Error refreshing memory:', error);
+    }
+  }, [config, historyManager, settings.merged]);
+
   const {
     streamingState,
     submitQuery,
@@ -264,9 +329,7 @@ export const AppContainer = (props: AppContainerProps) => {
     shellModeActive,
     () => settings.merged.preferredEditor as EditorType,
     openAuthDialog,
-    async () => {
-      /* performMemoryRefresh */
-    },
+    performMemoryRefresh,
     modelSwitchedFromQuotaError,
     setModelSwitchedFromQuotaError,
     refreshStatic,
@@ -325,6 +388,24 @@ export const AppContainer = (props: AppContainerProps) => {
 
   const { isFolderTrustDialogOpen, handleFolderTrustSelect } =
     useFolderTrust(settings);
+  const isInitialMount = useRef(true);
+
+  useEffect(() => {
+    // skip refreshing Static during first mount
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    // debounce so it doesn't fire up too often during resize
+    const handler = setTimeout(() => {
+      refreshStatic();
+    }, 300);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [terminalWidth, refreshStatic]);
 
   useEffect(() => {
     const unsubscribe = ideContext.subscribeToIdeContext(setIdeContextState);
@@ -523,6 +604,7 @@ export const AppContainer = (props: AppContainerProps) => {
       isFocused,
       elapsedTime: elapsedTime.toString(),
       currentLoadingPhrase,
+      historyRemountKey,
     }),
     [
       historyManager.history,
@@ -567,6 +649,7 @@ export const AppContainer = (props: AppContainerProps) => {
       isFocused,
       elapsedTime,
       currentLoadingPhrase,
+      historyRemountKey,
     ],
   );
 

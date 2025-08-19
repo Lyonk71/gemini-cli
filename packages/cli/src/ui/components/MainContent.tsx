@@ -34,6 +34,7 @@ export const MainContent = (props: MainContentProps) => {
   return (
     <>
       <Static
+        key={uiState.historyRemountKey}
         items={uiState.history.map((h) => (
           <HistoryItemDisplay
             terminalWidth={mainAreaWidth}

@@ -47,8 +47,6 @@ export const App = (props: AppProps) => {
 
   const mainControlsRef = useRef<DOMElement>(null);
   const pendingHistoryItemRef = useRef<DOMElement>(null);
-  const isInitialMount = useRef(true);
-  const [staticNeedsRefresh, setStaticNeedsRefresh] = useState(false);
 
   const staticExtraHeight = 3;
   const availableTerminalHeight = useMemo(() => {
@@ -96,25 +94,6 @@ export const App = (props: AppProps) => {
     uiState.showPrivacyNotice,
     geminiClient,
   ]);
-
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    const handler = setTimeout(() => {
-      setStaticNeedsRefresh(false);
-      uiActions.refreshStatic();
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [terminalWidth, terminalHeight, uiActions]);
-
-  useEffect(() => {
-    if (uiState.streamingState === StreamingState.Idle && staticNeedsRefresh) {
-      setStaticNeedsRefresh(false);
-      uiActions.refreshStatic();
-    }
-  }, [uiState.streamingState, uiActions, staticNeedsRefresh]);
 
   const errorCount = useMemo(
     () =>
