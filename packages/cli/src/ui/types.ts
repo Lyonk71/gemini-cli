@@ -5,9 +5,14 @@
  */
 
 import type {
+  ThoughtSummary,
   ToolCallConfirmationDetails,
+  ToolConfirmationOutcome,
   ToolResultDisplay,
 } from '@google/gemini-cli-core';
+import { type ReactNode } from 'react';
+
+export type { ThoughtSummary };
 
 // Only defining the state enum needed by the UI
 export enum StreamingState {
@@ -70,11 +75,13 @@ export type HistoryItemUser = HistoryItemBase & {
 export type HistoryItemGemini = HistoryItemBase & {
   type: 'gemini';
   text: string;
+  
 };
 
 export type HistoryItemGeminiContent = HistoryItemBase & {
   type: 'gemini_content';
   text: string;
+  
 };
 
 export type HistoryItemInfo = HistoryItemBase & {
@@ -253,3 +260,16 @@ export type SlashCommandProcessorResult =
       type: 'handled'; // Indicates the command was processed and no further action is needed.
     }
   | SubmitPromptResult;
+
+export interface ShellConfirmationRequest {
+  commands: string[];
+  onConfirm: (
+    outcome: ToolConfirmationOutcome,
+    approvedCommands?: string[],
+  ) => void;
+}
+
+export interface ConfirmationRequest {
+  prompt: ReactNode;
+  onConfirm: (confirm: boolean) => void;
+}

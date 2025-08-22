@@ -333,8 +333,6 @@ export async function loadCliConfig(
   const ideMode = settings.ideMode ?? false;
 
   const folderTrustFeature = settings.folderTrustFeature ?? false;
-  const folderTrustSetting = settings.folderTrust ?? true;
-  const folderTrust = folderTrustFeature && folderTrustSetting;
   const trustedFolder = isWorkspaceTrusted(settings);
 
   const allExtensions = annotateActiveExtensions(
@@ -555,10 +553,9 @@ export async function loadCliConfig(
     ideMode,
     chatCompression: settings.chatCompression,
     folderTrustFeature,
-    folderTrust,
+    folderTrust: trustedFolder,
     interactive,
     trustedFolder,
-    useRipgrep: settings.useRipgrep,
     shouldUseNodePtyShell: settings.shouldUseNodePtyShell,
     skipNextSpeakerCheck: settings.skipNextSpeakerCheck,
     enablePromptCompletion: settings.enablePromptCompletion ?? false,
