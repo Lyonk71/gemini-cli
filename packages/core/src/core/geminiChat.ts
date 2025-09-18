@@ -226,6 +226,7 @@ export class GeminiChat {
     model: string,
     params: SendMessageParameters,
     prompt_id: string,
+    onFirst429?: (authType?: string, error?: unknown) => Promise<void>,
   ): Promise<AsyncGenerator<StreamEvent>> {
     await this.sendPromise;
 
@@ -276,6 +277,7 @@ export class GeminiChat {
               requestContents,
               params,
               prompt_id,
+              onFirst429,
             );
 
             for await (const chunk of stream) {
@@ -340,6 +342,7 @@ export class GeminiChat {
     requestContents: Content[],
     params: SendMessageParameters,
     prompt_id: string,
+    onFirst429?: (authType?: string, error?: unknown) => Promise<void>,
   ): Promise<AsyncGenerator<GenerateContentResponse>> {
     const apiCall = () => {
       const modelToUse = getEffectiveModel(
@@ -381,7 +384,9 @@ export class GeminiChat {
         return false;
       },
       onPersistent429: onPersistent429Callback,
+      onFirst429,
       authType: this.config.getContentGeneratorConfig()?.authType,
+      debug: this.config.getDebugMode(),
     });
 
     return this.processStreamResponse(model, streamResponse);

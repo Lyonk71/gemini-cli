@@ -156,6 +156,10 @@ export const AppContainer = (props: AppContainerProps) => {
       historyManager.addItem,
       config.getWorkingDir(),
     );
+  const [informationDialogContent, setInformationDialogContent] = useState<
+    string | null
+  >(null);
+  const showInformationDialog = informationDialogContent !== null;
 
   // Helper to determine the effective model, considering the fallback state.
   const getEffectiveModel = useCallback(() => {
@@ -561,6 +565,7 @@ Logging in with Google... Please restart Gemini CLI to continue.
     terminalWidth,
     terminalHeight,
     embeddedShellFocused,
+    (content: string) => setInformationDialogContent(content),
   );
 
   // Auto-accept indicator
@@ -987,7 +992,8 @@ Logging in with Google... Please restart Gemini CLI to continue.
     isAuthDialogOpen ||
     isEditorDialogOpen ||
     showPrivacyNotice ||
-    !!proQuotaRequest;
+    !!proQuotaRequest ||
+    showInformationDialog;
 
   const pendingHistoryItems = useMemo(
     () => [...pendingSlashCommandHistoryItems, ...pendingGeminiHistoryItems],
@@ -1066,10 +1072,10 @@ Logging in with Google... Please restart Gemini CLI to continue.
       currentIDE,
       updateInfo,
       showIdeRestartPrompt,
-      isRestarting,
-      extensionsUpdateState,
       activePtyId,
       embeddedShellFocused,
+      informationDialogContent,
+      showInformationDialog,
     }),
     [
       historyManager.history,
@@ -1144,8 +1150,10 @@ Logging in with Google... Please restart Gemini CLI to continue.
       isRestarting,
       currentModel,
       extensionsUpdateState,
-      activePtyId,
+      activeP-tyId,
       embeddedShellFocused,
+      informationDialogContent,
+      showInformationDialog,
     ],
   );
 
@@ -1172,6 +1180,8 @@ Logging in with Google... Please restart Gemini CLI to continue.
       onWorkspaceMigrationDialogOpen,
       onWorkspaceMigrationDialogClose,
       handleProQuotaChoice,
+      showInformationDialog: (content: string) => setInformationDialogContent(content),
+      closeInformationDialog: () => setInformationDialogContent(null),
     }),
     [
       handleThemeSelect,

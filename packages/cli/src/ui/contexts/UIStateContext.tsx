@@ -111,6 +111,8 @@ export interface UIState {
   extensionsUpdateState: Map<string, ExtensionUpdateState>;
   activePtyId: number | undefined;
   embeddedShellFocused: boolean;
+  informationDialogContent: string | null;
+  showInformationDialog: boolean;
 }
 
 export const UIStateContext = createContext<UIState | null>(null);

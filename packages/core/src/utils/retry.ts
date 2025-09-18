@@ -23,7 +23,12 @@ export interface RetryOptions {
     authType?: string,
     error?: unknown,
   ) => Promise<string | boolean | null>;
+  onFirst429?: (
+    authType?: string,
+    error?: unknown,
+  ) => Promise<void>;
   authType?: string;
+  debug?: boolean;
 }
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
@@ -79,8 +84,10 @@ export async function retryWithBackoff<T>(
     initialDelayMs,
     maxDelayMs,
     onPersistent429,
+    onFirst429,
     authType,
     shouldRetry,
+    debug = false,
   } = {
     ...DEFAULT_RETRY_OPTIONS,
     ...options,
@@ -96,6 +103,18 @@ export async function retryWithBackoff<T>(
       return await fn();
     } catch (error) {
       const errorStatus = getErrorStatus(error);
+
+      // Call onFirst429 callback on first 429 error
+      if (errorStatus === 429 && consecutive429Count === 0 && onFirst429) {
+        try {
+          await onFirst429(authType, error);
+        } catch (first429Error) {
+          // If first429 callback fails, continue with retry logic
+          if (debug) {
+            console.warn('onFirst429 callback failed:', first429Error);
+          }
+        }
+      }
 
       // Check for Pro quota exceeded error first - immediate fallback for OAuth users
       if (
@@ -119,7 +138,9 @@ export async function retryWithBackoff<T>(
           }
         } catch (fallbackError) {
           // If fallback fails, continue with original error
-          console.warn('Fallback to Flash model failed:', fallbackError);
+          if (debug) {
+            console.warn('Fallback to Flash model failed:', fallbackError);
+          }
         }
       }
 
@@ -146,7 +167,9 @@ export async function retryWithBackoff<T>(
           }
         } catch (fallbackError) {
           // If fallback fails, continue with original error
-          console.warn('Fallback to Flash model failed:', fallbackError);
+          if (debug) {
+            console.warn('Fallback to Flash model failed:', fallbackError);
+          }
         }
       }
 
@@ -178,7 +201,9 @@ export async function retryWithBackoff<T>(
           }
         } catch (fallbackError) {
           // If fallback fails, continue with original error
-          console.warn('Fallback to Flash model failed:', fallbackError);
+          if (debug) {
+            console.warn('Fallback to Flash model failed:', fallbackError);
+          }
         }
       }
 
@@ -192,16 +217,18 @@ export async function retryWithBackoff<T>(
 
       if (delayDurationMs > 0) {
         // Respect Retry-After header if present and parsed
-        console.warn(
-          `Attempt ${attempt} failed with status ${delayErrorStatus ?? 'unknown'}. Retrying after explicit delay of ${delayDurationMs}ms...`,
-          error,
-        );
+        if (debug) {
+          console.warn(
+            `Attempt ${attempt} failed with status ${delayErrorStatus ?? 'unknown'}. Retrying after explicit delay of ${delayDurationMs}ms...`,
+            error,
+          );
+        }
         await delay(delayDurationMs);
         // Reset currentDelay for next potential non-429 error, or if Retry-After is not present next time
         currentDelay = initialDelayMs;
       } else {
         // Fall back to exponential backoff with jitter
-        logRetryAttempt(attempt, error, errorStatus);
+        logRetryAttempt(attempt, error, errorStatus, debug);
         // Add jitter: +/- 30% of currentDelay
         const jitter = currentDelay * 0.3 * (Math.random() * 2 - 1);
         const delayWithJitter = Math.max(0, currentDelay + jitter);
@@ -303,15 +330,21 @@ function getDelayDurationAndStatus(error: unknown): {
  * @param attempt The current attempt number.
  * @param error The error that caused the retry.
  * @param errorStatus The HTTP status code of the error, if available.
+ * @param debug Whether to log retry messages.
  */
 function logRetryAttempt(
   attempt: number,
   error: unknown,
   errorStatus?: number,
+  debug: boolean = false,
 ): void {
   let message = `Attempt ${attempt} failed. Retrying with backoff...`;
   if (errorStatus) {
     message = `Attempt ${attempt} failed with status ${errorStatus}. Retrying with backoff...`;
+  }
+
+  if (!debug) {
+    return;
   }
 
   if (errorStatus === 429) {

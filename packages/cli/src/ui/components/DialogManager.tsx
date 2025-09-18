@@ -18,6 +18,7 @@ import { EditorSettingsDialog } from './EditorSettingsDialog.js';
 import { PrivacyNotice } from '../privacy/PrivacyNotice.js';
 import { WorkspaceMigrationDialog } from './WorkspaceMigrationDialog.js';
 import { ProQuotaDialog } from './ProQuotaDialog.js';
+import { InformationDialog } from './InformationDialog/index.js';
 import { theme } from '../semantic-colors.js';
 import { useUIState } from '../contexts/UIStateContext.js';
 import { useUIActions } from '../contexts/UIActionsContext.js';
@@ -35,6 +36,14 @@ export const DialogManager = () => {
   const { constrainHeight, terminalHeight, staticExtraHeight, mainAreaWidth } =
     uiState;
 
+  if (uiState.showInformationDialog && uiState.informationDialogContent) {
+    return (
+      <InformationDialog
+        content={uiState.informationDialogContent}
+        onClose={uiActions.closeInformationDialog}
+      />
+    );
+  }
   if (uiState.showIdeRestartPrompt) {
     return (
       <Box borderStyle="round" borderColor={theme.status.warning} paddingX={1}>

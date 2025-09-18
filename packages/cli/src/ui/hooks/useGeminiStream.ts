@@ -62,6 +62,7 @@ import path from 'node:path';
 import { useSessionStats } from '../contexts/SessionContext.js';
 import { useKeypress } from './useKeypress.js';
 import type { LoadedSettings } from '../../config/settings.js';
+import { InformationMessageType } from '../components/InformationDialog/types.js';
 
 enum StreamProcessingStatus {
   Completed,
@@ -105,6 +106,7 @@ export const useGeminiStream = (
   terminalWidth: number,
   terminalHeight: number,
   isShellFocused?: boolean,
+  showInformationDialog?: (content: string) => void,
 ) => {
   const [initError, setInitError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -514,22 +516,50 @@ export const useGeminiStream = (
         addItem(pendingHistoryItemRef.current, userMessageTimestamp);
         setPendingHistoryItem(null);
       }
-      addItem(
-        {
-          type: MessageType.ERROR,
-          text: parseAndFormatApiError(
-            eventValue.error,
-            config.getContentGeneratorConfig()?.authType,
-            undefined,
-            config.getModel(),
-            DEFAULT_GEMINI_FLASH_MODEL,
-          ),
-        },
-        userMessageTimestamp,
-      );
+
+      // Check if this is a complex error that should use the dialog
+      // The error message might be a JSON string containing nested JSON
+      const errorMsg = eventValue.error?.message || '';
+      const hasApiErrorStructure = errorMsg.includes('{"error":{"message":');
+      const hasNestedJson = errorMsg.includes('"message":"{\n') || errorMsg.includes('"message":"{\\n');
+
+      if ((hasApiErrorStructure || hasNestedJson) && showInformationDialog) {
+        // Show in dialog for complex errors
+
+        // Parse the outer JSON if it's a stringified API error
+        let dataToSend = eventValue.error;
+        if (hasApiErrorStructure) {
+          try {
+            dataToSend = JSON.parse(errorMsg);
+          } catch {
+            // If parsing fails, use the original error
+          }
+        }
+
+        const errorMessage = JSON.stringify({
+          type: InformationMessageType.API_ERROR,
+          data: dataToSend
+        });
+        showInformationDialog(errorMessage);
+      } else {
+        // Simple errors stay inline as before
+        addItem(
+          {
+            type: MessageType.ERROR,
+            text: parseAndFormatApiError(
+              eventValue.error,
+              config.getContentGeneratorConfig()?.authType,
+              undefined,
+              config.getModel(),
+              DEFAULT_GEMINI_FLASH_MODEL,
+            ),
+          },
+          userMessageTimestamp,
+        );
+      }
       setThought(null); // Reset thought when there's an error
     },
-    [addItem, pendingHistoryItemRef, setPendingHistoryItem, config, setThought],
+    [addItem, pendingHistoryItemRef, setPendingHistoryItem, config, setThought, showInformationDialog],
   );
 
   const handleCitationEvent = useCallback(
@@ -790,10 +820,22 @@ export const useGeminiStream = (
         setInitError(null);
 
         try {
+          const onFirst429Callback = async (authType?: string, error?: unknown) => {
+            if (showInformationDialog) {
+              const errorMessage = JSON.stringify({
+                type: InformationMessageType.API_ERROR,
+                data: error
+              });
+              showInformationDialog(errorMessage);
+            }
+          };
+
           const stream = geminiClient.sendMessageStream(
             queryToSend,
             abortSignal,
             prompt_id,
+            undefined,
+            onFirst429Callback,
           );
           const processingStatus = await processGeminiStreamEvents(
             stream,

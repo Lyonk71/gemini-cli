@@ -445,6 +445,7 @@ export class GeminiClient {
     signal: AbortSignal,
     prompt_id: string,
     turns: number = MAX_TURNS,
+    onFirst429?: (authType?: string, error?: unknown) => Promise<void>,
   ): AsyncGenerator<ServerGeminiStreamEvent, Turn> {
     if (this.lastPromptId !== prompt_id) {
       this.loopDetector.reset(prompt_id);
@@ -528,7 +529,7 @@ export class GeminiClient {
       this.currentSequenceModel = modelToUse;
     }
 
-    const resultStream = turn.run(modelToUse, request, linkedSignal);
+    const resultStream = turn.run(modelToUse, request, linkedSignal, onFirst429);
     for await (const event of resultStream) {
       if (this.loopDetector.addAndCheck(event)) {
         yield { type: GeminiEventType.LoopDetected };
@@ -573,6 +574,7 @@ export class GeminiClient {
           signal,
           prompt_id,
           boundedTurns - 1,
+          onFirst429,
         );
       }
     }

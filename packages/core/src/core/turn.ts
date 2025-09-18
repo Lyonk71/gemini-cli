@@ -214,6 +214,7 @@ export class Turn {
     model: string,
     req: PartListUnion,
     signal: AbortSignal,
+    onFirst429?: (authType?: string, error?: unknown) => Promise<void>,
   ): AsyncGenerator<ServerGeminiStreamEvent> {
     try {
       // Note: This assumes `sendMessageStream` yields events like
@@ -227,6 +228,7 @@ export class Turn {
           },
         },
         this.prompt_id,
+        onFirst429,
       );
 
       for await (const streamEvent of responseStream) {
