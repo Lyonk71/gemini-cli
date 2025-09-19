@@ -131,7 +131,6 @@ function extractNestedErrorMessage(data: ApiErrorData): string {
 // Format quota exceeded errors in a human-readable way
 function formatQuotaExceededError(data: ApiErrorData): string {
   try {
-    // Processing quota exceeded error for dialog display
 
     const error = data.error || data;
 
@@ -141,135 +140,68 @@ function formatQuotaExceededError(data: ApiErrorData): string {
 
     const lines: string[] = [];
 
-    // Extract main message
-    if (error.message) {
-      const message = error.message;
-      // Processing error message for information extraction
-
-      // Look for quota information in the message
-      const quotaMatch = message.match(/Quota exceeded for quota metric '([^']+)'/);
-      const limitMatch = message.match(/limit '([^']+)'/);
-      const retryMatch = message.match(/Please retry in ([0-9.]+)s/);
-
-      if (quotaMatch) {
-        const quotaName = quotaMatch[1]
-          .replace(/generativelanguage\.googleapis\.com\//, '')
-          .replace(/_/g, ' ')
-          .replace(/([a-z])([A-Z])/g, '$1 $2')
-          .toLowerCase();
-        lines.push(`• Quota: ${quotaName}`);
-      }
-
-      if (limitMatch) {
-        const limitType = limitMatch[1].replace(/([A-Z])/g, ' $1').toLowerCase().trim();
-        lines.push(`• Limit type: ${limitType}`);
-      }
-
-      if (retryMatch) {
-        const seconds = parseFloat(retryMatch[1]);
-        if (seconds >= 60) {
-          const minutes = Math.floor(seconds / 60);
-          const remainingSeconds = Math.floor(seconds % 60);
-          lines.push(`• Retry in: ${minutes}m ${remainingSeconds}s`);
-        } else {
-          lines.push(`• Retry in: ${Math.floor(seconds)}s`);
-        }
-      }
-    }
-
-    // Try to parse nested JSON from the message first
-    if (error.message && typeof error.message === 'string' && error.message.includes('{')) {
+    // Parse the nested JSON structure in error.message
+    if (error.message && typeof error.message === 'string') {
       try {
-        const jsonStart = error.message.indexOf('{');
-        const jsonEnd = error.message.lastIndexOf('}') + 1;
-        if (jsonEnd > jsonStart) {
-          const jsonPart = error.message.substring(jsonStart, jsonEnd);
-          const parsedError = JSON.parse(jsonPart);
-          // Successfully parsed nested error from message
+        const nestedError = JSON.parse(error.message);
 
-          // Process the parsed error
-          if (parsedError.error) {
-            const nestedError = parsedError.error;
+        if (nestedError.error) {
+          const actualError = nestedError.error;
 
-            // Extract from nested error message
-            if (nestedError.message) {
-              const quotaMatch = nestedError.message.match(/Quota exceeded for quota metric '([^']+)'/);
-              const limitMatch = nestedError.message.match(/limit '([^']+)'/);
+          // Extract the main human-readable message
+          if (actualError.message) {
+            const message = actualError.message;
 
-              if (quotaMatch && !lines.some(l => l.includes('Quota:'))) {
-                const quotaName = quotaMatch[1]
-                  .replace(/generativelanguage\.googleapis\.com\//, '')
-                  .replace(/_/g, ' ')
-                  .replace(/([a-z])([A-Z])/g, '$1 $2')
-                  .toLowerCase();
-                lines.push(`• Quota: ${quotaName}`);
-              }
-
-              if (limitMatch && !lines.some(l => l.includes('Limit type:'))) {
-                const limitType = limitMatch[1].replace(/([A-Z])/g, ' $1').toLowerCase().trim();
-                lines.push(`• Limit type: ${limitType}`);
-              }
+            // Get the first sentence before any technical details
+            const mainMessageMatch = message.match(/^([^.]*\.)/);
+            if (mainMessageMatch) {
+              const mainMessage = mainMessageMatch[1].trim();
+              lines.push(mainMessage);
+              lines.push(''); // Add blank line
             }
+          }
 
-            // Process nested details
-            if (nestedError.details && Array.isArray(nestedError.details)) {
-              for (const detail of nestedError.details) {
-                if (detail['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure' && detail.violations) {
-                  for (const violation of detail.violations) {
-                    if (violation.quotaValue && !lines.some(l => l.includes('Daily limit:'))) {
-                      lines.push(`• Daily limit: ${violation.quotaValue} requests`);
-                    }
-                    if (violation.quotaDimensions?.model && !lines.some(l => l.includes('Model:'))) {
-                      lines.push(`• Model: ${violation.quotaDimensions.model}`);
-                    }
+          // Extract details from the structured data
+          if (actualError.details && Array.isArray(actualError.details)) {
+            for (const detail of actualError.details) {
+              if (detail['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure' && detail.violations) {
+                for (const violation of detail.violations) {
+                  if (violation.quotaValue) {
+                    lines.push(`• Daily limit: ${violation.quotaValue} requests`);
+                  }
+                  if (violation.quotaDimensions?.model) {
+                    lines.push(`• Model: ${violation.quotaDimensions.model}`);
                   }
                 }
+              }
 
-                if (detail['@type'] === 'type.googleapis.com/google.rpc.Help' && detail.links) {
-                  for (const link of detail.links) {
-                    if (link.url && !lines.some(l => l.includes(link.url))) {
-                      lines.push(`• Learn more: ${link.url}`);
-                    }
+              if (detail['@type'] === 'type.googleapis.com/google.rpc.Help' && detail.links) {
+                for (const link of detail.links) {
+                  if (link.url) {
+                    lines.push(`• Learn more: ${link.url}`);
                   }
                 }
               }
             }
           }
         }
-      } catch {
-        // Failed to parse nested JSON, continue with fallback logic
+      } catch (parseError) {
+        // If parsing fails, fall back to simple message
+        lines.push('Rate limit exceeded. Please try again later.');
       }
     }
 
-    // Extract details if available (fallback to original logic)
-    const errorDetails = ('details' in error && error.details) || (data.error && data.error.details);
-    if (errorDetails && Array.isArray(errorDetails)) {
-      for (const detail of errorDetails) {
-        if (detail['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure' && detail.violations) {
-          for (const violation of detail.violations) {
-            if (violation.quotaValue) {
-              lines.push(`• Daily limit: ${violation.quotaValue} requests`);
-            }
-            if (violation.quotaDimensions?.model) {
-              lines.push(`• Model: ${violation.quotaDimensions.model}`);
-            }
-          }
-        }
 
-        if (detail['@type'] === 'type.googleapis.com/google.rpc.Help' && detail.links) {
-          for (const link of detail.links) {
-            if (link.url) {
-              lines.push(`• Learn more: ${link.url}`);
-            }
-          }
-        }
-      }
+    // If we extracted a main message or any bullet points, return formatted content
+    if (lines.length > 0) {
+      return lines.join('\n');
     }
 
-    return lines.length > 0 ? lines.join('\n') : extractNestedErrorMessage(data);
+    // Only fall back to raw error if we couldn't extract anything useful
+    return 'Rate limit exceeded. Please try again later.';
 
   } catch {
-    // If parsing fails, fall back to the original extraction method
-    return extractNestedErrorMessage(data);
+    // If parsing fails, provide a simple fallback for quota errors
+    return 'Rate limit exceeded. Please try again later.';
   }
 }

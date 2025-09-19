@@ -522,10 +522,6 @@ export const useGeminiStream = (
       // The error message might be a JSON string containing nested JSON
       const errorMsg = eventValue.error?.message || '';
 
-      // Debug logging for 429 errors
-      if (eventValue.error?.status === 429) {
-        console.log('[DEBUG] 429 Error received for dialog processing');
-      }
 
       const hasApiErrorStructure = errorMsg.includes('{"error":{"message":');
       const hasNestedJson = errorMsg.includes('"message":"{\n') || errorMsg.includes('"message":"{\\n');
@@ -550,9 +546,7 @@ export const useGeminiStream = (
             try {
               const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
               dataToSend = JSON.parse(jsonPart);
-              // Successfully extracted JSON from error message
             } catch {
-              // Failed to extract JSON from error message, continue with original
             }
           }
         }
@@ -843,7 +837,6 @@ export const useGeminiStream = (
         const onFirst429Callback = async (authType?: string, error?: unknown, attemptCount?: number, maxAttempts?: number) => {
           // Store retry information for use in error handler
           retryInfoRef.current = { attemptCount, maxAttempts };
-          // Retry info stored for error handler
         };
 
         try {
