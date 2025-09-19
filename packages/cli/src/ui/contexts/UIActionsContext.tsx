@@ -43,7 +43,7 @@ export interface UIActions {
   onWorkspaceMigrationDialogOpen: () => void;
   onWorkspaceMigrationDialogClose: () => void;
   handleProQuotaChoice: (choice: 'auth' | 'continue') => void;
-  showInformationDialog: (content: string) => void;
+  showInformationDialog: (content: string, retryAttempt?: number, maxRetries?: number) => void;
   closeInformationDialog: () => void;
 }
 

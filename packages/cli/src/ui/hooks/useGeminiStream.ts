@@ -106,11 +106,12 @@ export const useGeminiStream = (
   terminalWidth: number,
   terminalHeight: number,
   isShellFocused?: boolean,
-  showInformationDialog?: (content: string) => void,
+  showInformationDialog?: (content: string, retryAttempt?: number, maxRetries?: number) => void,
 ) => {
   const [initError, setInitError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const turnCancelledRef = useRef(false);
+  const retryInfoRef = useRef<{ attemptCount?: number; maxAttempts?: number } | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [thought, setThought] = useState<ThoughtSummary | null>(null);
   const [pendingHistoryItem, pendingHistoryItemRef, setPendingHistoryItem] =
@@ -520,11 +521,18 @@ export const useGeminiStream = (
       // Check if this is a complex error that should use the dialog
       // The error message might be a JSON string containing nested JSON
       const errorMsg = eventValue.error?.message || '';
+
+      // Debug logging for 429 errors
+      if (eventValue.error?.status === 429) {
+        console.log('[DEBUG] 429 Error received for dialog processing');
+      }
+
       const hasApiErrorStructure = errorMsg.includes('{"error":{"message":');
       const hasNestedJson = errorMsg.includes('"message":"{\n') || errorMsg.includes('"message":"{\\n');
+      const is429Error = eventValue.error?.status === 429;
 
-      if ((hasApiErrorStructure || hasNestedJson) && showInformationDialog) {
-        // Show in dialog for complex errors
+      if ((hasApiErrorStructure || hasNestedJson || is429Error) && showInformationDialog) {
+        // Show in dialog for complex errors and 429 errors
 
         // Parse the outer JSON if it's a stringified API error
         let dataToSend = eventValue.error;
@@ -534,13 +542,26 @@ export const useGeminiStream = (
           } catch {
             // If parsing fails, use the original error
           }
+        } else if (errorMsg && errorMsg.includes('{')) {
+          // Try to extract JSON from the message
+          const jsonStart = errorMsg.indexOf('{');
+          const jsonEnd = errorMsg.lastIndexOf('}') + 1;
+          if (jsonEnd > jsonStart) {
+            try {
+              const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
+              dataToSend = JSON.parse(jsonPart);
+              // Successfully extracted JSON from error message
+            } catch {
+              // Failed to extract JSON from error message, continue with original
+            }
+          }
         }
 
         const errorMessage = JSON.stringify({
           type: InformationMessageType.API_ERROR,
           data: dataToSend
         });
-        showInformationDialog(errorMessage);
+        showInformationDialog(errorMessage, retryInfoRef.current?.attemptCount, retryInfoRef.current?.maxAttempts);
       } else {
         // Simple errors stay inline as before
         addItem(
@@ -559,7 +580,7 @@ export const useGeminiStream = (
       }
       setThought(null); // Reset thought when there's an error
     },
-    [addItem, pendingHistoryItemRef, setPendingHistoryItem, config, setThought, showInformationDialog],
+    [addItem, pendingHistoryItemRef, setPendingHistoryItem, config, setThought],
   );
 
   const handleCitationEvent = useCallback(
@@ -819,16 +840,13 @@ export const useGeminiStream = (
         setIsResponding(true);
         setInitError(null);
 
+        const onFirst429Callback = async (authType?: string, error?: unknown, attemptCount?: number, maxAttempts?: number) => {
+          // Store retry information for use in error handler
+          retryInfoRef.current = { attemptCount, maxAttempts };
+          // Retry info stored for error handler
+        };
+
         try {
-          const onFirst429Callback = async (authType?: string, error?: unknown) => {
-            if (showInformationDialog) {
-              const errorMessage = JSON.stringify({
-                type: InformationMessageType.API_ERROR,
-                data: error
-              });
-              showInformationDialog(errorMessage);
-            }
-          };
 
           const stream = geminiClient.sendMessageStream(
             queryToSend,

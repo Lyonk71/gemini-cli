@@ -445,7 +445,7 @@ export class GeminiClient {
     signal: AbortSignal,
     prompt_id: string,
     turns: number = MAX_TURNS,
-    onFirst429?: (authType?: string, error?: unknown) => Promise<void>,
+    onFirst429?: (authType?: string, error?: unknown, attemptCount?: number, maxAttempts?: number) => Promise<void>,
   ): AsyncGenerator<ServerGeminiStreamEvent, Turn> {
     if (this.lastPromptId !== prompt_id) {
       this.loopDetector.reset(prompt_id);

@@ -156,10 +156,10 @@ export const AppContainer = (props: AppContainerProps) => {
       historyManager.addItem,
       config.getWorkingDir(),
     );
-  const [informationDialogContent, setInformationDialogContent] = useState<
-    string | null
+  const [informationDialogData, setInformationDialogData] = useState<
+    { content: string; timestamp: number; retryAttempt?: number; maxRetries?: number } | null
   >(null);
-  const showInformationDialog = informationDialogContent !== null;
+  const showInformationDialog = informationDialogData !== null;
 
   // Helper to determine the effective model, considering the fallback state.
   const getEffectiveModel = useCallback(() => {
@@ -565,7 +565,8 @@ Logging in with Google... Please restart Gemini CLI to continue.
     terminalWidth,
     terminalHeight,
     embeddedShellFocused,
-    (content: string) => setInformationDialogContent(content),
+    (content: string, retryAttempt?: number, maxRetries?: number) =>
+      setInformationDialogData({ content, timestamp: Date.now(), retryAttempt, maxRetries }),
   );
 
   // Auto-accept indicator
@@ -1074,7 +1075,7 @@ Logging in with Google... Please restart Gemini CLI to continue.
       showIdeRestartPrompt,
       activePtyId,
       embeddedShellFocused,
-      informationDialogContent,
+      informationDialogData,
       showInformationDialog,
     }),
     [
@@ -1150,9 +1151,9 @@ Logging in with Google... Please restart Gemini CLI to continue.
       isRestarting,
       currentModel,
       extensionsUpdateState,
-      activeP-tyId,
+      activePtyId,
       embeddedShellFocused,
-      informationDialogContent,
+      informationDialogData,
       showInformationDialog,
     ],
   );
@@ -1180,8 +1181,9 @@ Logging in with Google... Please restart Gemini CLI to continue.
       onWorkspaceMigrationDialogOpen,
       onWorkspaceMigrationDialogClose,
       handleProQuotaChoice,
-      showInformationDialog: (content: string) => setInformationDialogContent(content),
-      closeInformationDialog: () => setInformationDialogContent(null),
+      showInformationDialog: (content: string, retryAttempt?: number, maxRetries?: number) =>
+        setInformationDialogData({ content, timestamp: Date.now(), retryAttempt, maxRetries }),
+      closeInformationDialog: () => setInformationDialogData(null),
     }),
     [
       handleThemeSelect,

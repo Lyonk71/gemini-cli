@@ -26,6 +26,8 @@ export interface RetryOptions {
   onFirst429?: (
     authType?: string,
     error?: unknown,
+    attemptCount?: number,
+    maxAttempts?: number,
   ) => Promise<void>;
   authType?: string;
   debug?: boolean;
@@ -107,7 +109,7 @@ export async function retryWithBackoff<T>(
       // Call onFirst429 callback on first 429 error
       if (errorStatus === 429 && consecutive429Count === 0 && onFirst429) {
         try {
-          await onFirst429(authType, error);
+          await onFirst429(authType, error, attempt, maxAttempts);
         } catch (first429Error) {
           // If first429 callback fails, continue with retry logic
           if (debug) {

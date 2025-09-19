@@ -36,10 +36,10 @@ export const DialogManager = () => {
   const { constrainHeight, terminalHeight, staticExtraHeight, mainAreaWidth } =
     uiState;
 
-  if (uiState.showInformationDialog && uiState.informationDialogContent) {
+  if (uiState.showInformationDialog && uiState.informationDialogData) {
     return (
       <InformationDialog
-        content={uiState.informationDialogContent}
+        data={uiState.informationDialogData}
         onClose={uiActions.closeInformationDialog}
       />
     );

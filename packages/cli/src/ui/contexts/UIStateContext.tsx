@@ -111,7 +111,7 @@ export interface UIState {
   extensionsUpdateState: Map<string, ExtensionUpdateState>;
   activePtyId: number | undefined;
   embeddedShellFocused: boolean;
-  informationDialogContent: string | null;
+  informationDialogData: { content: string; timestamp: number; retryAttempt?: number; maxRetries?: number } | null;
   showInformationDialog: boolean;
 }
 
