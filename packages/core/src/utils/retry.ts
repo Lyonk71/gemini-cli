@@ -29,6 +29,12 @@ export interface RetryOptions {
     attemptCount?: number,
     maxAttempts?: number,
   ) => Promise<void>;
+  onRetryAttempt?: (
+    authType?: string,
+    error?: unknown,
+    attemptCount?: number,
+    maxAttempts?: number,
+  ) => Promise<void>;
   authType?: string;
   debug?: boolean;
 }
@@ -87,6 +93,7 @@ export async function retryWithBackoff<T>(
     maxDelayMs,
     onPersistent429,
     onFirst429,
+    onRetryAttempt,
     authType,
     shouldRetry,
     debug = false,
@@ -212,6 +219,18 @@ export async function retryWithBackoff<T>(
       // Check if we've exhausted retries or shouldn't retry
       if (attempt >= maxAttempts || !shouldRetry(error as Error)) {
         throw error;
+      }
+
+      // Call retry attempt callback if provided
+      if (onRetryAttempt && errorStatus === 429) {
+        try {
+          await onRetryAttempt(authType, error, attempt, maxAttempts);
+        } catch (retryAttemptError) {
+          // If retry attempt callback fails, continue with retry logic
+          if (debug) {
+            console.warn('onRetryAttempt callback failed:', retryAttemptError);
+          }
+        }
       }
 
       const { delayDurationMs, errorStatus: delayErrorStatus } =

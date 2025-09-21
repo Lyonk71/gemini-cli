@@ -156,9 +156,12 @@ export const AppContainer = (props: AppContainerProps) => {
       historyManager.addItem,
       config.getWorkingDir(),
     );
-  const [informationDialogData, setInformationDialogData] = useState<
-    { content: string; timestamp: number; retryAttempt?: number; maxRetries?: number } | null
-  >(null);
+  const [informationDialogData, setInformationDialogData] = useState<{
+    content: string;
+    timestamp: number;
+    retryAttempt?: number;
+    maxRetries?: number;
+  } | null>(null);
   const showInformationDialog = informationDialogData !== null;
 
   // Helper to determine the effective model, considering the fallback state.
@@ -566,7 +569,13 @@ Logging in with Google... Please restart Gemini CLI to continue.
     terminalHeight,
     embeddedShellFocused,
     (content: string, retryAttempt?: number, maxRetries?: number) =>
-      setInformationDialogData({ content, timestamp: Date.now(), retryAttempt, maxRetries }),
+      setInformationDialogData({
+        content,
+        timestamp: Date.now(),
+        retryAttempt,
+        maxRetries,
+      }),
+    () => setInformationDialogData(null),
   );
 
   // Auto-accept indicator
@@ -1045,7 +1054,6 @@ Logging in with Google... Please restart Gemini CLI to continue.
       ctrlCPressedOnce,
       ctrlDPressedOnce,
       showEscapePrompt,
-      isFocused,
       elapsedTime,
       currentLoadingPhrase,
       historyRemountKey,
@@ -1073,6 +1081,8 @@ Logging in with Google... Please restart Gemini CLI to continue.
       currentIDE,
       updateInfo,
       showIdeRestartPrompt,
+      isRestarting,
+      extensionsUpdateState,
       activePtyId,
       embeddedShellFocused,
       informationDialogData,
@@ -1121,7 +1131,6 @@ Logging in with Google... Please restart Gemini CLI to continue.
       ctrlCPressedOnce,
       ctrlDPressedOnce,
       showEscapePrompt,
-      isFocused,
       elapsedTime,
       currentLoadingPhrase,
       historyRemountKey,
@@ -1181,8 +1190,17 @@ Logging in with Google... Please restart Gemini CLI to continue.
       onWorkspaceMigrationDialogOpen,
       onWorkspaceMigrationDialogClose,
       handleProQuotaChoice,
-      showInformationDialog: (content: string, retryAttempt?: number, maxRetries?: number) =>
-        setInformationDialogData({ content, timestamp: Date.now(), retryAttempt, maxRetries }),
+      showInformationDialog: (
+        content: string,
+        retryAttempt?: number,
+        maxRetries?: number,
+      ) =>
+        setInformationDialogData({
+          content,
+          timestamp: Date.now(),
+          retryAttempt,
+          maxRetries,
+        }),
       closeInformationDialog: () => setInformationDialogData(null),
     }),
     [

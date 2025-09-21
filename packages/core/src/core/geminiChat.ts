@@ -226,7 +226,18 @@ export class GeminiChat {
     model: string,
     params: SendMessageParameters,
     prompt_id: string,
-    onFirst429?: (authType?: string, error?: unknown, attemptCount?: number, maxAttempts?: number) => Promise<void>,
+    onFirst429?: (
+      authType?: string,
+      error?: unknown,
+      attemptCount?: number,
+      maxAttempts?: number,
+    ) => Promise<void>,
+    onRetryAttempt?: (
+      authType?: string,
+      error?: unknown,
+      attemptCount?: number,
+      maxAttempts?: number,
+    ) => Promise<void>,
   ): Promise<AsyncGenerator<StreamEvent>> {
     await this.sendPromise;
 
@@ -278,6 +289,7 @@ export class GeminiChat {
               params,
               prompt_id,
               onFirst429,
+              onRetryAttempt,
             );
 
             for await (const chunk of stream) {
@@ -342,7 +354,18 @@ export class GeminiChat {
     requestContents: Content[],
     params: SendMessageParameters,
     prompt_id: string,
-    onFirst429?: (authType?: string, error?: unknown, attemptCount?: number, maxAttempts?: number) => Promise<void>,
+    onFirst429?: (
+      authType?: string,
+      error?: unknown,
+      attemptCount?: number,
+      maxAttempts?: number,
+    ) => Promise<void>,
+    onRetryAttempt?: (
+      authType?: string,
+      error?: unknown,
+      attemptCount?: number,
+      maxAttempts?: number,
+    ) => Promise<void>,
   ): Promise<AsyncGenerator<GenerateContentResponse>> {
     const apiCall = () => {
       const modelToUse = getEffectiveModel(
@@ -385,6 +408,7 @@ export class GeminiChat {
       },
       onPersistent429: onPersistent429Callback,
       onFirst429,
+      onRetryAttempt,
       authType: this.config.getContentGeneratorConfig()?.authType,
       debug: this.config.getDebugMode(),
     });

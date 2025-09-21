@@ -106,12 +106,20 @@ export const useGeminiStream = (
   terminalWidth: number,
   terminalHeight: number,
   isShellFocused?: boolean,
-  showInformationDialog?: (content: string, retryAttempt?: number, maxRetries?: number) => void,
+  showInformationDialog?: (
+    content: string,
+    retryAttempt?: number,
+    maxRetries?: number,
+  ) => void,
+  closeInformationDialog?: () => void,
 ) => {
   const [initError, setInitError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const turnCancelledRef = useRef(false);
-  const retryInfoRef = useRef<{ attemptCount?: number; maxAttempts?: number } | null>(null);
+  const retryInfoRef = useRef<{
+    attemptCount?: number;
+    maxAttempts?: number;
+  } | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [thought, setThought] = useState<ThoughtSummary | null>(null);
   const [pendingHistoryItem, pendingHistoryItemRef, setPendingHistoryItem] =
@@ -522,12 +530,16 @@ export const useGeminiStream = (
       // The error message might be a JSON string containing nested JSON
       const errorMsg = eventValue.error?.message || '';
 
-
       const hasApiErrorStructure = errorMsg.includes('{"error":{"message":');
-      const hasNestedJson = errorMsg.includes('"message":"{\n') || errorMsg.includes('"message":"{\\n');
+      const hasNestedJson =
+        errorMsg.includes('"message":"{\n') ||
+        errorMsg.includes('"message":"{\\n');
       const is429Error = eventValue.error?.status === 429;
 
-      if ((hasApiErrorStructure || hasNestedJson || is429Error) && showInformationDialog) {
+      if (
+        (hasApiErrorStructure || hasNestedJson || is429Error) &&
+        showInformationDialog
+      ) {
         // Show in dialog for complex errors and 429 errors
 
         // Parse the outer JSON if it's a stringified API error
@@ -535,8 +547,9 @@ export const useGeminiStream = (
         if (hasApiErrorStructure) {
           try {
             dataToSend = JSON.parse(errorMsg);
-          } catch {
+          } catch (parseError) {
             // If parsing fails, use the original error
+            console.debug('Failed to parse error message JSON:', parseError);
           }
         } else if (errorMsg && errorMsg.includes('{')) {
           // Try to extract JSON from the message
@@ -546,16 +559,22 @@ export const useGeminiStream = (
             try {
               const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
               dataToSend = JSON.parse(jsonPart);
-            } catch {
+            } catch (parseError) {
+              // If JSON parsing fails, continue with original error
+              console.debug('Failed to parse nested error JSON:', parseError);
             }
           }
         }
 
         const errorMessage = JSON.stringify({
           type: InformationMessageType.API_ERROR,
-          data: dataToSend
+          data: dataToSend,
         });
-        showInformationDialog(errorMessage, retryInfoRef.current?.attemptCount, retryInfoRef.current?.maxAttempts);
+        showInformationDialog(
+          errorMessage,
+          retryInfoRef.current?.attemptCount,
+          retryInfoRef.current?.maxAttempts,
+        );
       } else {
         // Simple errors stay inline as before
         addItem(
@@ -574,7 +593,14 @@ export const useGeminiStream = (
       }
       setThought(null); // Reset thought when there's an error
     },
-    [addItem, pendingHistoryItemRef, setPendingHistoryItem, config, setThought],
+    [
+      addItem,
+      pendingHistoryItemRef,
+      setPendingHistoryItem,
+      config,
+      setThought,
+      showInformationDialog,
+    ],
   );
 
   const handleCitationEvent = useCallback(
@@ -834,19 +860,114 @@ export const useGeminiStream = (
         setIsResponding(true);
         setInitError(null);
 
-        const onFirst429Callback = async (authType?: string, error?: unknown, attemptCount?: number, maxAttempts?: number) => {
+        const onFirst429Callback = async (
+          authType?: string,
+          error?: unknown,
+          attemptCount?: number,
+          maxAttempts?: number,
+        ) => {
           // Store retry information for use in error handler
           retryInfoRef.current = { attemptCount, maxAttempts };
+
+          // Immediately show dialog on first 429 error
+          if (showInformationDialog && error) {
+            // Parse and format the error for display
+            let dataToSend = error;
+
+            // If error has a message property that might contain JSON, try to parse it
+            if (
+              typeof error === 'object' &&
+              error !== null &&
+              'message' in error
+            ) {
+              const errorMsg = (error as { message?: string }).message || '';
+              if (
+                errorMsg.includes('{"error":{"message":') ||
+                errorMsg.includes('{')
+              ) {
+                try {
+                  // Try to extract JSON from the message
+                  const jsonStart = errorMsg.indexOf('{');
+                  const jsonEnd = errorMsg.lastIndexOf('}') + 1;
+                  if (jsonEnd > jsonStart) {
+                    const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
+                    dataToSend = JSON.parse(jsonPart);
+                  }
+                } catch (parseError) {
+                  // If parsing fails, use the original error
+                  console.debug(
+                    'Failed to parse error message JSON:',
+                    parseError,
+                  );
+                }
+              }
+            }
+
+            const errorMessage = JSON.stringify({
+              type: InformationMessageType.API_ERROR,
+              data: dataToSend,
+            });
+            showInformationDialog(errorMessage, attemptCount, maxAttempts);
+          }
+        };
+
+        const onRetryAttemptCallback = async (
+          authType?: string,
+          error?: unknown,
+          attemptCount?: number,
+          maxAttempts?: number,
+        ) => {
+          // Update retry information
+          retryInfoRef.current = { attemptCount, maxAttempts };
+
+          // Update the dialog with new retry progress if it's already showing
+          if (showInformationDialog && error) {
+            // Parse and format the error for display (same logic as onFirst429)
+            let dataToSend = error;
+
+            if (
+              typeof error === 'object' &&
+              error !== null &&
+              'message' in error
+            ) {
+              const errorMsg = (error as { message?: string }).message || '';
+              if (
+                errorMsg.includes('{"error":{"message":') ||
+                errorMsg.includes('{')
+              ) {
+                try {
+                  const jsonStart = errorMsg.indexOf('{');
+                  const jsonEnd = errorMsg.lastIndexOf('}') + 1;
+                  if (jsonEnd > jsonStart) {
+                    const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
+                    dataToSend = JSON.parse(jsonPart);
+                  }
+                } catch (parseError) {
+                  // If parsing fails, use the original error
+                  console.debug(
+                    'Failed to parse error message JSON:',
+                    parseError,
+                  );
+                }
+              }
+            }
+
+            const errorMessage = JSON.stringify({
+              type: InformationMessageType.API_ERROR,
+              data: dataToSend,
+            });
+            showInformationDialog(errorMessage, attemptCount, maxAttempts);
+          }
         };
 
         try {
-
           const stream = geminiClient.sendMessageStream(
             queryToSend,
             abortSignal,
             prompt_id,
             undefined,
             onFirst429Callback,
+            onRetryAttemptCallback,
           );
           const processingStatus = await processGeminiStreamEvents(
             stream,
@@ -856,6 +977,13 @@ export const useGeminiStream = (
 
           if (processingStatus === StreamProcessingStatus.UserCancelled) {
             return;
+          }
+
+          // If we had retry info (meaning dialog was shown) and we completed successfully, close the dialog
+          if (retryInfoRef.current && closeInformationDialog) {
+            // Clear the retry info and close any information dialog that might be showing
+            retryInfoRef.current = null;
+            closeInformationDialog();
           }
 
           if (pendingHistoryItemRef.current) {
@@ -904,6 +1032,8 @@ export const useGeminiStream = (
       startNewPrompt,
       getPromptCount,
       handleLoopDetectedEvent,
+      showInformationDialog,
+      closeInformationDialog,
     ],
   );
 
