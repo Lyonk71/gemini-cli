@@ -582,7 +582,10 @@ Logging in with Google... Please restart Gemini CLI to continue.
         maxRetries,
         delayMs,
       }),
-    () => setInformationDialogData(null),
+    () => {
+      setInformationDialogData(null);
+      cancelOngoingRequest();
+    },
   );
 
   // Auto-accept indicator
@@ -1210,7 +1213,10 @@ Logging in with Google... Please restart Gemini CLI to continue.
           maxRetries,
           delayMs,
         }),
-      closeInformationDialog: () => setInformationDialogData(null),
+      closeInformationDialog: () => {
+        setInformationDialogData(null);
+        cancelOngoingRequest();
+      },
     }),
     [
       handleThemeSelect,
@@ -1233,6 +1239,7 @@ Logging in with Google... Please restart Gemini CLI to continue.
       onWorkspaceMigrationDialogOpen,
       onWorkspaceMigrationDialogClose,
       handleProQuotaChoice,
+      cancelOngoingRequest,
     ],
   );
 
