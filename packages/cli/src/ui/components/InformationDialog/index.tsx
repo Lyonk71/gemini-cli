@@ -19,31 +19,49 @@ interface InformationDialogProps {
 
 export const InformationDialog: React.FC<InformationDialogProps> = ({
   data,
-  onClose
+  onClose,
 }) => {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
   const processed = processInformationMessage(data.content);
 
-  // Update elapsed time every second
+  // Update remaining time every second for countdown
   useEffect(() => {
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - data.timestamp) / 1000);
-      setElapsedSeconds(elapsed);
-    }, 1000);
+    const updateTime = () => {
+      if (data.delayMs) {
+        const elapsed = Date.now() - data.timestamp;
+        const remaining = Math.max(
+          0,
+          Math.ceil((data.delayMs - elapsed) / 1000),
+        );
+        setRemainingSeconds(remaining);
+      } else {
+        // If no delayMs, show elapsed time
+        const elapsed = Math.floor((Date.now() - data.timestamp) / 1000);
+        setRemainingSeconds(elapsed);
+      }
+    };
 
-    // Set initial value
-    const elapsed = Math.floor((Date.now() - data.timestamp) / 1000);
-    setElapsedSeconds(elapsed);
+    const interval = setInterval(updateTime, 1000);
+    updateTime(); // Set initial value
 
     return () => clearInterval(interval);
-  }, [data.timestamp]);
+  }, [data.timestamp, data.delayMs]);
 
   const getBottomStatus = () => {
     if (data.retryAttempt !== undefined && data.maxRetries !== undefined) {
       if (data.retryAttempt >= data.maxRetries) {
-        return `Retries exhausted (${elapsedSeconds}s)`;
+        return `Retries exhausted`;
       }
-      return `Retry attempt: ${data.retryAttempt} of ${data.maxRetries} (${elapsedSeconds}s)`;
+
+      if (data.delayMs) {
+        if (remainingSeconds > 0) {
+          return `Retry attempt: ${data.retryAttempt} of ${data.maxRetries} (${remainingSeconds}s remaining)`;
+        } else {
+          return `Retry attempt: ${data.retryAttempt} of ${data.maxRetries} (Retrying...)`;
+        }
+      } else {
+        return `Retry attempt: ${data.retryAttempt} of ${data.maxRetries} (${remainingSeconds}s)`;
+      }
     }
     return null;
   };
@@ -54,7 +72,7 @@ export const InformationDialog: React.FC<InformationDialogProps> = ({
         onClose();
       }
     },
-    { isActive: true }
+    { isActive: true },
   );
 
   return (
@@ -76,7 +94,11 @@ export const InformationDialog: React.FC<InformationDialogProps> = ({
           <Text>{processed.content}</Text>
         </Box>
 
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+        <Box
+          flexDirection="row"
+          justifyContent="space-between"
+          alignItems="center"
+        >
           {getBottomStatus() ? (
             <Text color={theme.ui.comment}>{getBottomStatus()}</Text>
           ) : (

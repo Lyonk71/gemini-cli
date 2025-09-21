@@ -161,6 +161,7 @@ export const AppContainer = (props: AppContainerProps) => {
     timestamp: number;
     retryAttempt?: number;
     maxRetries?: number;
+    delayMs?: number;
   } | null>(null);
   const showInformationDialog = informationDialogData !== null;
 
@@ -568,12 +569,18 @@ Logging in with Google... Please restart Gemini CLI to continue.
     terminalWidth,
     terminalHeight,
     embeddedShellFocused,
-    (content: string, retryAttempt?: number, maxRetries?: number) =>
+    (
+      content: string,
+      retryAttempt?: number,
+      maxRetries?: number,
+      delayMs?: number,
+    ) =>
       setInformationDialogData({
         content,
         timestamp: Date.now(),
         retryAttempt,
         maxRetries,
+        delayMs,
       }),
     () => setInformationDialogData(null),
   );
@@ -1194,12 +1201,14 @@ Logging in with Google... Please restart Gemini CLI to continue.
         content: string,
         retryAttempt?: number,
         maxRetries?: number,
+        delayMs?: number,
       ) =>
         setInformationDialogData({
           content,
           timestamp: Date.now(),
           retryAttempt,
           maxRetries,
+          delayMs,
         }),
       closeInformationDialog: () => setInformationDialogData(null),
     }),

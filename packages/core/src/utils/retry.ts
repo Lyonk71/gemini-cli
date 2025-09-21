@@ -28,12 +28,14 @@ export interface RetryOptions {
     error?: unknown,
     attemptCount?: number,
     maxAttempts?: number,
+    delayMs?: number,
   ) => Promise<void>;
   onRetryAttempt?: (
     authType?: string,
     error?: unknown,
     attemptCount?: number,
     maxAttempts?: number,
+    delayMs?: number,
   ) => Promise<void>;
   authType?: string;
   debug?: boolean;
@@ -113,10 +115,29 @@ export async function retryWithBackoff<T>(
     } catch (error) {
       const errorStatus = getErrorStatus(error);
 
+      // Calculate delay for this retry attempt
+      const { delayDurationMs, errorStatus: delayErrorStatus } =
+        getDelayDurationAndStatus(error);
+
+      let actualDelayMs = 0;
+      if (delayDurationMs > 0) {
+        actualDelayMs = delayDurationMs;
+      } else {
+        // Calculate exponential backoff with jitter for this attempt
+        const jitter = currentDelay * 0.3 * (Math.random() * 2 - 1);
+        actualDelayMs = Math.max(0, currentDelay + jitter);
+      }
+
       // Call onFirst429 callback on first 429 error
       if (errorStatus === 429 && consecutive429Count === 0 && onFirst429) {
         try {
-          await onFirst429(authType, error, attempt, maxAttempts);
+          await onFirst429(
+            authType,
+            error,
+            attempt,
+            maxAttempts,
+            actualDelayMs,
+          );
         } catch (first429Error) {
           // If first429 callback fails, continue with retry logic
           if (debug) {
@@ -224,7 +245,13 @@ export async function retryWithBackoff<T>(
       // Call retry attempt callback if provided
       if (onRetryAttempt && errorStatus === 429) {
         try {
-          await onRetryAttempt(authType, error, attempt, maxAttempts);
+          await onRetryAttempt(
+            authType,
+            error,
+            attempt,
+            maxAttempts,
+            actualDelayMs,
+          );
         } catch (retryAttemptError) {
           // If retry attempt callback fails, continue with retry logic
           if (debug) {
@@ -232,9 +259,6 @@ export async function retryWithBackoff<T>(
           }
         }
       }
-
-      const { delayDurationMs, errorStatus: delayErrorStatus } =
-        getDelayDurationAndStatus(error);
 
       if (delayDurationMs > 0) {
         // Respect Retry-After header if present and parsed
@@ -250,10 +274,7 @@ export async function retryWithBackoff<T>(
       } else {
         // Fall back to exponential backoff with jitter
         logRetryAttempt(attempt, error, errorStatus, debug);
-        // Add jitter: +/- 30% of currentDelay
-        const jitter = currentDelay * 0.3 * (Math.random() * 2 - 1);
-        const delayWithJitter = Math.max(0, currentDelay + jitter);
-        await delay(delayWithJitter);
+        await delay(actualDelayMs);
         currentDelay = Math.min(maxDelayMs, currentDelay * 2);
       }
     }

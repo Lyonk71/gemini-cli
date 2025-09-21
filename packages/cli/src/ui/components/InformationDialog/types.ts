@@ -51,4 +51,5 @@ export interface InformationDialogData {
   timestamp: number;
   retryAttempt?: number;
   maxRetries?: number;
+  delayMs?: number;
 }

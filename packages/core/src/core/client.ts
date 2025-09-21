@@ -450,12 +450,14 @@ export class GeminiClient {
       error?: unknown,
       attemptCount?: number,
       maxAttempts?: number,
+      delayMs?: number,
     ) => Promise<void>,
     onRetryAttempt?: (
       authType?: string,
       error?: unknown,
       attemptCount?: number,
       maxAttempts?: number,
+      delayMs?: number,
     ) => Promise<void>,
   ): AsyncGenerator<ServerGeminiStreamEvent, Turn> {
     if (this.lastPromptId !== prompt_id) {

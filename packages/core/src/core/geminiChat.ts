@@ -231,12 +231,14 @@ export class GeminiChat {
       error?: unknown,
       attemptCount?: number,
       maxAttempts?: number,
+      delayMs?: number,
     ) => Promise<void>,
     onRetryAttempt?: (
       authType?: string,
       error?: unknown,
       attemptCount?: number,
       maxAttempts?: number,
+      delayMs?: number,
     ) => Promise<void>,
   ): Promise<AsyncGenerator<StreamEvent>> {
     await this.sendPromise;
@@ -359,12 +361,14 @@ export class GeminiChat {
       error?: unknown,
       attemptCount?: number,
       maxAttempts?: number,
+      delayMs?: number,
     ) => Promise<void>,
     onRetryAttempt?: (
       authType?: string,
       error?: unknown,
       attemptCount?: number,
       maxAttempts?: number,
+      delayMs?: number,
     ) => Promise<void>,
   ): Promise<AsyncGenerator<GenerateContentResponse>> {
     const apiCall = () => {

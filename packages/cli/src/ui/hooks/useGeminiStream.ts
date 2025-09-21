@@ -110,6 +110,7 @@ export const useGeminiStream = (
     content: string,
     retryAttempt?: number,
     maxRetries?: number,
+    delayMs?: number,
   ) => void,
   closeInformationDialog?: () => void,
 ) => {
@@ -865,6 +866,7 @@ export const useGeminiStream = (
           error?: unknown,
           attemptCount?: number,
           maxAttempts?: number,
+          delayMs?: number,
         ) => {
           // Store retry information for use in error handler
           retryInfoRef.current = { attemptCount, maxAttempts };
@@ -907,7 +909,12 @@ export const useGeminiStream = (
               type: InformationMessageType.API_ERROR,
               data: dataToSend,
             });
-            showInformationDialog(errorMessage, attemptCount, maxAttempts);
+            showInformationDialog(
+              errorMessage,
+              attemptCount,
+              maxAttempts,
+              delayMs,
+            );
           }
         };
 
@@ -916,6 +923,7 @@ export const useGeminiStream = (
           error?: unknown,
           attemptCount?: number,
           maxAttempts?: number,
+          delayMs?: number,
         ) => {
           // Update retry information
           retryInfoRef.current = { attemptCount, maxAttempts };
@@ -956,7 +964,12 @@ export const useGeminiStream = (
               type: InformationMessageType.API_ERROR,
               data: dataToSend,
             });
-            showInformationDialog(errorMessage, attemptCount, maxAttempts);
+            showInformationDialog(
+              errorMessage,
+              attemptCount,
+              maxAttempts,
+              delayMs,
+            );
           }
         };
 
