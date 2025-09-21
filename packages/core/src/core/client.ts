@@ -649,13 +649,10 @@ export class GeminiClient {
       const result = await retryWithBackoff(apiCall, {
         onPersistent429: onPersistent429Callback,
         authType: this.config.getContentGeneratorConfig()?.authType,
+        abortSignal,
       });
       return result;
     } catch (error: unknown) {
-      if (abortSignal.aborted) {
-        throw error;
-      }
-
       await reportError(
         error,
         `Error generating content via API with model ${currentAttemptModel}.`,

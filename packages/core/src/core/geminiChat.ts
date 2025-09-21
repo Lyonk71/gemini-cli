@@ -226,6 +226,7 @@ export class GeminiChat {
     model: string,
     params: SendMessageParameters,
     prompt_id: string,
+    abortSignal?: AbortSignal,
     onFirst429?: (
       authType?: string,
       error?: unknown,
@@ -290,6 +291,7 @@ export class GeminiChat {
               requestContents,
               params,
               prompt_id,
+              abortSignal,
               onFirst429,
               onRetryAttempt,
             );
@@ -356,6 +358,7 @@ export class GeminiChat {
     requestContents: Content[],
     params: SendMessageParameters,
     prompt_id: string,
+    abortSignal?: AbortSignal,
     onFirst429?: (
       authType?: string,
       error?: unknown,
@@ -415,6 +418,7 @@ export class GeminiChat {
       onRetryAttempt,
       authType: this.config.getContentGeneratorConfig()?.authType,
       debug: this.config.getDebugMode(),
+      abortSignal,
     });
 
     return this.processStreamResponse(model, streamResponse);

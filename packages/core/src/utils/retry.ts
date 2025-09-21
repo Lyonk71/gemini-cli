@@ -39,6 +39,7 @@ export interface RetryOptions {
   ) => Promise<void>;
   authType?: string;
   debug?: boolean;
+  abortSignal?: AbortSignal;
 }
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
@@ -72,10 +73,31 @@ function defaultShouldRetry(error: Error | unknown): boolean {
 /**
  * Delays execution for a specified number of milliseconds.
  * @param ms The number of milliseconds to delay.
- * @returns A promise that resolves after the delay.
+ * @param abortSignal Optional abort signal to cancel the delay.
+ * @returns A promise that resolves after the delay or rejects if aborted.
  */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(new Error('Operation aborted'));
+      return;
+    }
+
+    const timeout = setTimeout(resolve, ms);
+
+    const abortHandler = () => {
+      clearTimeout(timeout);
+      reject(new Error('Operation aborted'));
+    };
+
+    abortSignal?.addEventListener('abort', abortHandler);
+
+    // Clean up event listener when promise resolves
+    timeout &&
+      setTimeout(() => {
+        abortSignal?.removeEventListener('abort', abortHandler);
+      }, ms);
+  });
 }
 
 /**
@@ -99,6 +121,7 @@ export async function retryWithBackoff<T>(
     authType,
     shouldRetry,
     debug = false,
+    abortSignal,
   } = {
     ...DEFAULT_RETRY_OPTIONS,
     ...options,
@@ -109,6 +132,11 @@ export async function retryWithBackoff<T>(
   let consecutive429Count = 0;
 
   while (attempt < maxAttempts) {
+    // Check if operation was aborted before starting attempt
+    if (abortSignal?.aborted) {
+      throw new Error('Operation aborted');
+    }
+
     attempt++;
     try {
       return await fn();
@@ -126,6 +154,11 @@ export async function retryWithBackoff<T>(
         // Calculate exponential backoff with jitter for this attempt
         const jitter = currentDelay * 0.3 * (Math.random() * 2 - 1);
         actualDelayMs = Math.max(0, currentDelay + jitter);
+      }
+
+      // Check if operation was aborted before calling onFirst429
+      if (abortSignal?.aborted) {
+        throw new Error('Operation aborted');
       }
 
       // Call onFirst429 callback on first 429 error
@@ -242,6 +275,11 @@ export async function retryWithBackoff<T>(
         throw error;
       }
 
+      // Check if operation was aborted before calling onRetryAttempt
+      if (abortSignal?.aborted) {
+        throw new Error('Operation aborted');
+      }
+
       // Call retry attempt callback if provided
       if (onRetryAttempt && errorStatus === 429) {
         try {
@@ -268,13 +306,13 @@ export async function retryWithBackoff<T>(
             error,
           );
         }
-        await delay(delayDurationMs);
+        await delay(delayDurationMs, abortSignal);
         // Reset currentDelay for next potential non-429 error, or if Retry-After is not present next time
         currentDelay = initialDelayMs;
       } else {
         // Fall back to exponential backoff with jitter
         logRetryAttempt(attempt, error, errorStatus, debug);
-        await delay(actualDelayMs);
+        await delay(actualDelayMs, abortSignal);
         currentDelay = Math.min(maxDelayMs, currentDelay * 2);
       }
     }

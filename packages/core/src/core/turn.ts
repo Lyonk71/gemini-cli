@@ -241,6 +241,7 @@ export class Turn {
           },
         },
         this.prompt_id,
+        signal,
         onFirst429,
         onRetryAttempt,
       );
