@@ -10,7 +10,8 @@ import { useState, useEffect } from 'react';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import { theme } from '../../semantic-colors.js';
 import { processInformationMessage } from './processors.js';
-import type { InformationDialogData } from './types.js';
+import type { InformationDialogData, InformationMessage } from './types.js';
+import { InformationMessageType } from './types.js';
 
 interface InformationDialogProps {
   data: InformationDialogData;
@@ -22,7 +23,11 @@ export const InformationDialog: React.FC<InformationDialogProps> = ({
   onClose,
 }) => {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
-  const processed = processInformationMessage(data.content);
+  const message: InformationMessage = {
+    type: InformationMessageType.API_ERROR,
+    data: data.content,
+  };
+  const processed = processInformationMessage(message);
 
   // Update remaining time every second for countdown
   useEffect(() => {

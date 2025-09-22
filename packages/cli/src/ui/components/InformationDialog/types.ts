@@ -4,35 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export interface ApiErrorData {
-  error?: {
-    code?: number;
-    message?: string;
-    status?: string;
-    details?: Array<{
-      '@type'?: string;
-      violations?: Array<{
-        quotaMetric?: string;
-        quotaId?: string;
-        quotaDimensions?: {
-          model?: string;
-          location?: string;
-        };
-        quotaValue?: string;
-      }>;
-      links?: Array<{
-        description?: string;
-        url?: string;
-      }>;
-    }>;
-  };
-  message?: string;
-  status?: number;
-}
+import { type ParsedError } from '@google/gemini-cli-core';
 
 export interface InformationMessage {
   type: InformationMessageType;
-  data: ApiErrorData;
+  data: ParsedError;
   title?: string;
 }
 
@@ -47,7 +23,7 @@ export interface ProcessedMessage {
 }
 
 export interface InformationDialogData {
-  content: string;
+  content: ParsedError;
   timestamp: number;
   retryAttempt?: number;
   maxRetries?: number;

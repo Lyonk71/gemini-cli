@@ -57,6 +57,21 @@ const getRateLimitErrorMessageDefault = (
 ) =>
   `\nPossible quota limitations in place or slow response times detected. Switching to the ${fallbackModel} model for the rest of this session.`;
 
+export enum ParsedErrorType {
+  PRO_QUOTA,
+  GENERIC_QUOTA,
+  RATE_LIMIT,
+  AUTH,
+  GENERIC,
+}
+
+export interface ParsedError {
+  type: ParsedErrorType;
+  title: string;
+  message: string;
+  rawError: unknown;
+}
+
 function getRateLimitMessage(
   authType?: AuthType,
   error?: unknown,
@@ -101,6 +116,162 @@ function getRateLimitMessage(
   }
 }
 
+function _parseError(
+  error: unknown,
+  authType?: AuthType,
+  userTier?: UserTierId,
+  currentModel?: string,
+  fallbackModel?: string,
+): ParsedError {
+  if (isStructuredError(error)) {
+    if (error.status === 429) {
+      const message = getRateLimitMessage(
+        authType,
+        error,
+        userTier,
+        currentModel,
+        fallbackModel,
+      );
+      if (isProQuotaExceededError(error)) {
+        return {
+          type: ParsedErrorType.PRO_QUOTA,
+          title: 'Quota Exceeded',
+          message: `${error.message}${message}`,
+          rawError: error,
+        };
+      } else if (isGenericQuotaExceededError(error)) {
+        return {
+          type: ParsedErrorType.GENERIC_QUOTA,
+          title: 'Quota Exceeded',
+          message: `${error.message}${message}`,
+          rawError: error,
+        };
+      } else {
+        return {
+          type: ParsedErrorType.RATE_LIMIT,
+          title: 'Rate Limit Exceeded',
+          message: `${error.message}${message}`,
+          rawError: error,
+        };
+      }
+    }
+    if (error.status === 401 || error.status === 403) {
+      return {
+        type: ParsedErrorType.AUTH,
+        title: 'Authentication Error',
+        message: error.message,
+        rawError: error,
+      };
+    }
+    return {
+      type: ParsedErrorType.GENERIC,
+      title: 'API Error',
+      message: error.message,
+      rawError: error,
+    };
+  }
+
+  if (typeof error === 'string') {
+    const jsonStart = error.indexOf('{');
+    if (jsonStart === -1) {
+      return {
+        type: ParsedErrorType.GENERIC,
+        title: 'API Error',
+        message: error,
+        rawError: error,
+      };
+    }
+
+    const jsonString = error.substring(jsonStart);
+
+    try {
+      const parsedJson = JSON.parse(jsonString) as unknown;
+      if (isApiError(parsedJson)) {
+        let finalMessage = parsedJson.error.message;
+        try {
+          const nestedError = JSON.parse(finalMessage) as unknown;
+          if (isApiError(nestedError)) {
+            finalMessage = nestedError.error.message;
+          }
+        } catch (_e) {
+          // Not nested
+        }
+
+        if (parsedJson.error.code === 429) {
+          const message = getRateLimitMessage(
+            authType,
+            parsedJson,
+            userTier,
+            currentModel,
+            fallbackModel,
+          );
+          if (isProQuotaExceededError(parsedJson)) {
+            return {
+              type: ParsedErrorType.PRO_QUOTA,
+              title: 'Quota Exceeded',
+              message: `${finalMessage}${message}`,
+              rawError: error,
+            };
+          } else if (isGenericQuotaExceededError(parsedJson)) {
+            return {
+              type: ParsedErrorType.GENERIC_QUOTA,
+              title: 'Quota Exceeded',
+              message: `${finalMessage}${message}`,
+              rawError: error,
+            };
+          } else {
+            return {
+              type: ParsedErrorType.RATE_LIMIT,
+              title: 'Rate Limit Exceeded',
+              message: `${finalMessage}${message}`,
+              rawError: error,
+            };
+          }
+        }
+        if (parsedJson.error.code === 401 || parsedJson.error.code === 403) {
+          return {
+            type: ParsedErrorType.AUTH,
+            title: 'Authentication Error',
+            message: finalMessage,
+            rawError: error,
+          };
+        }
+        return {
+          type: ParsedErrorType.GENERIC,
+          title: 'API Error',
+          message: finalMessage,
+          rawError: error,
+        };
+      }
+    } catch (_e) {
+      // Not valid JSON
+    }
+    return {
+      type: ParsedErrorType.GENERIC,
+      title: 'API Error',
+      message: error,
+      rawError: error,
+    };
+  }
+
+  return {
+    type: ParsedErrorType.GENERIC,
+    title: 'API Error',
+    message: 'An unknown error occurred.',
+    rawError: error,
+  };
+}
+
+export function parseError(
+  error: unknown,
+  authType?: AuthType,
+  userTier?: UserTierId,
+  currentModel?: string,
+  fallbackModel?: string,
+): ParsedError {
+  return _parseError(error, authType, userTier, currentModel, fallbackModel);
+}
+
 export function parseAndFormatApiError(
   error: unknown,
   authType?: AuthType,
@@ -108,59 +279,12 @@ export function parseAndFormatApiError(
   currentModel?: string,
   fallbackModel?: string,
 ): string {
-  if (isStructuredError(error)) {
-    let text = `[API Error: ${error.message}]`;
-    if (error.status === 429) {
-      text += getRateLimitMessage(
-        authType,
-        error,
-        userTier,
-        currentModel,
-        fallbackModel,
-      );
-    }
-    return text;
-  }
-
-  // The error message might be a string containing a JSON object.
-  if (typeof error === 'string') {
-    const jsonStart = error.indexOf('{');
-    if (jsonStart === -1) {
-      return `[API Error: ${error}]`; // Not a JSON error, return as is.
-    }
-
-    const jsonString = error.substring(jsonStart);
-
-    try {
-      const parsedError = JSON.parse(jsonString) as unknown;
-      if (isApiError(parsedError)) {
-        let finalMessage = parsedError.error.message;
-        try {
-          // See if the message is a stringified JSON with another error
-          const nestedError = JSON.parse(finalMessage) as unknown;
-          if (isApiError(nestedError)) {
-            finalMessage = nestedError.error.message;
-          }
-        } catch (_e) {
-          // It's not a nested JSON error, so we just use the message as is.
-        }
-        let text = `[API Error: ${finalMessage} (Status: ${parsedError.error.status})]`;
-        if (parsedError.error.code === 429) {
-          text += getRateLimitMessage(
-            authType,
-            parsedError,
-            userTier,
-            currentModel,
-            fallbackModel,
-          );
-        }
-        return text;
-      }
-    } catch (_e) {
-      // Not a valid JSON, fall through and return the original message.
-    }
-    return `[API Error: ${error}]`;
-  }
-
-  return '[API Error: An unknown error occurred.]';
+  const parsed = _parseError(
+    error,
+    authType,
+    userTier,
+    currentModel,
+    fallbackModel,
+  );
+  return `[${parsed.title}: ${parsed.message}]`;
 }

@@ -23,6 +23,7 @@ import type {
   UserTierId,
   IdeInfo,
   FallbackIntent,
+  ParsedError,
 } from '@google/gemini-cli-core';
 import type { DOMElement } from 'ink';
 import type { SessionStatsState } from '../contexts/SessionContext.js';
@@ -111,7 +112,12 @@ export interface UIState {
   extensionsUpdateState: Map<string, ExtensionUpdateState>;
   activePtyId: number | undefined;
   embeddedShellFocused: boolean;
-  informationDialogData: { content: string; timestamp: number; retryAttempt?: number; maxRetries?: number } | null;
+  informationDialogData: {
+    content: ParsedError;
+    timestamp: number;
+    retryAttempt?: number;
+    maxRetries?: number;
+  } | null;
   showInformationDialog: boolean;
 }
 

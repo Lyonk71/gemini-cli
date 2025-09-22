@@ -42,6 +42,7 @@ import {
   AuthType,
   clearCachedCredentialFile,
   ShellExecutionService,
+  type ParsedError,
 } from '@google/gemini-cli-core';
 import { validateAuthMethod } from '../config/auth.js';
 import { loadHierarchicalGeminiMemory } from '../config/config.js';
@@ -157,7 +158,7 @@ export const AppContainer = (props: AppContainerProps) => {
       config.getWorkingDir(),
     );
   const [informationDialogData, setInformationDialogData] = useState<{
-    content: string;
+    content: ParsedError;
     timestamp: number;
     retryAttempt?: number;
     maxRetries?: number;
@@ -570,7 +571,7 @@ Logging in with Google... Please restart Gemini CLI to continue.
     terminalHeight,
     embeddedShellFocused,
     (
-      content: string,
+      content: ParsedError,
       retryAttempt?: number,
       maxRetries?: number,
       delayMs?: number,
@@ -1201,7 +1202,7 @@ Logging in with Google... Please restart Gemini CLI to continue.
       onWorkspaceMigrationDialogClose,
       handleProQuotaChoice,
       showInformationDialog: (
-        content: string,
+        content: ParsedError,
         retryAttempt?: number,
         maxRetries?: number,
         delayMs?: number,

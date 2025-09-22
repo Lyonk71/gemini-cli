@@ -16,6 +16,7 @@ import type {
   ThoughtSummary,
   ToolCallRequestInfo,
   GeminiErrorEventValue,
+  ParsedError,
 } from '@google/gemini-cli-core';
 import {
   GeminiEventType as ServerGeminiEventType,
@@ -31,6 +32,7 @@ import {
   ConversationFinishedEvent,
   ApprovalMode,
   parseAndFormatApiError,
+  parseError,
   ToolConfirmationOutcome,
   promptIdContext,
 } from '@google/gemini-cli-core';
@@ -62,7 +64,6 @@ import path from 'node:path';
 import { useSessionStats } from '../contexts/SessionContext.js';
 import { useKeypress } from './useKeypress.js';
 import type { LoadedSettings } from '../../config/settings.js';
-import { InformationMessageType } from '../components/InformationDialog/types.js';
 
 enum StreamProcessingStatus {
   Completed,
@@ -107,7 +108,7 @@ export const useGeminiStream = (
   terminalHeight: number,
   isShellFocused?: boolean,
   showInformationDialog?: (
-    content: string,
+    content: ParsedError,
     retryAttempt?: number,
     maxRetries?: number,
     delayMs?: number,
@@ -542,37 +543,16 @@ export const useGeminiStream = (
         showInformationDialog
       ) {
         // Show in dialog for complex errors and 429 errors
+        const parsed = parseError(
+          eventValue.error,
+          config.getContentGeneratorConfig()?.authType,
+          undefined,
+          config.getModel(),
+          DEFAULT_GEMINI_FLASH_MODEL,
+        );
 
-        // Parse the outer JSON if it's a stringified API error
-        let dataToSend = eventValue.error;
-        if (hasApiErrorStructure) {
-          try {
-            dataToSend = JSON.parse(errorMsg);
-          } catch (parseError) {
-            // If parsing fails, use the original error
-            console.debug('Failed to parse error message JSON:', parseError);
-          }
-        } else if (errorMsg && errorMsg.includes('{')) {
-          // Try to extract JSON from the message
-          const jsonStart = errorMsg.indexOf('{');
-          const jsonEnd = errorMsg.lastIndexOf('}') + 1;
-          if (jsonEnd > jsonStart) {
-            try {
-              const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
-              dataToSend = JSON.parse(jsonPart);
-            } catch (parseError) {
-              // If JSON parsing fails, continue with original error
-              console.debug('Failed to parse nested error JSON:', parseError);
-            }
-          }
-        }
-
-        const errorMessage = JSON.stringify({
-          type: InformationMessageType.API_ERROR,
-          data: dataToSend,
-        });
         showInformationDialog(
-          errorMessage,
+          parsed,
           retryInfoRef.current?.attemptCount,
           retryInfoRef.current?.maxAttempts,
         );
@@ -873,48 +853,15 @@ export const useGeminiStream = (
 
           // Immediately show dialog on first 429 error
           if (showInformationDialog && error) {
-            // Parse and format the error for display
-            let dataToSend = error;
-
-            // If error has a message property that might contain JSON, try to parse it
-            if (
-              typeof error === 'object' &&
-              error !== null &&
-              'message' in error
-            ) {
-              const errorMsg = (error as { message?: string }).message || '';
-              if (
-                errorMsg.includes('{"error":{"message":') ||
-                errorMsg.includes('{')
-              ) {
-                try {
-                  // Try to extract JSON from the message
-                  const jsonStart = errorMsg.indexOf('{');
-                  const jsonEnd = errorMsg.lastIndexOf('}') + 1;
-                  if (jsonEnd > jsonStart) {
-                    const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
-                    dataToSend = JSON.parse(jsonPart);
-                  }
-                } catch (parseError) {
-                  // If parsing fails, use the original error
-                  console.debug(
-                    'Failed to parse error message JSON:',
-                    parseError,
-                  );
-                }
-              }
-            }
-
-            const errorMessage = JSON.stringify({
-              type: InformationMessageType.API_ERROR,
-              data: dataToSend,
-            });
-            showInformationDialog(
-              errorMessage,
-              attemptCount,
-              maxAttempts,
-              delayMs,
+            const parsed = parseError(
+              error,
+              config.getContentGeneratorConfig()?.authType,
+              undefined,
+              config.getModel(),
+              DEFAULT_GEMINI_FLASH_MODEL,
             );
+
+            showInformationDialog(parsed, attemptCount, maxAttempts, delayMs);
           }
         };
 
@@ -930,46 +877,15 @@ export const useGeminiStream = (
 
           // Update the dialog with new retry progress if it's already showing
           if (showInformationDialog && error) {
-            // Parse and format the error for display (same logic as onFirst429)
-            let dataToSend = error;
-
-            if (
-              typeof error === 'object' &&
-              error !== null &&
-              'message' in error
-            ) {
-              const errorMsg = (error as { message?: string }).message || '';
-              if (
-                errorMsg.includes('{"error":{"message":') ||
-                errorMsg.includes('{')
-              ) {
-                try {
-                  const jsonStart = errorMsg.indexOf('{');
-                  const jsonEnd = errorMsg.lastIndexOf('}') + 1;
-                  if (jsonEnd > jsonStart) {
-                    const jsonPart = errorMsg.substring(jsonStart, jsonEnd);
-                    dataToSend = JSON.parse(jsonPart);
-                  }
-                } catch (parseError) {
-                  // If parsing fails, use the original error
-                  console.debug(
-                    'Failed to parse error message JSON:',
-                    parseError,
-                  );
-                }
-              }
-            }
-
-            const errorMessage = JSON.stringify({
-              type: InformationMessageType.API_ERROR,
-              data: dataToSend,
-            });
-            showInformationDialog(
-              errorMessage,
-              attemptCount,
-              maxAttempts,
-              delayMs,
+            const parsed = parseError(
+              error,
+              config.getContentGeneratorConfig()?.authType,
+              undefined,
+              config.getModel(),
+              DEFAULT_GEMINI_FLASH_MODEL,
             );
+
+            showInformationDialog(parsed, attemptCount, maxAttempts, delayMs);
           }
         };
 
